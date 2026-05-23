@@ -1,4 +1,5 @@
 use bytemuck::{Pod, Zeroable};
+use std::sync::Arc;
 
 use crate::simulation::Simulation;
 use crate::simulation::config::*;
@@ -12,8 +13,9 @@ pub struct ParticleInstance {
     pub color: [f32; 3],
 }
 
-pub struct FrontWgpu<'a> {
-    surface: wgpu::Surface<'a>,
+pub struct FrontWgpu {
+    _window: Arc<winit::window::Window>, // workaround z tutoriala
+    surface: wgpu::Surface<'static>, 
     device: wgpu::Device,
     queue: wgpu::Queue,
     surf_config: wgpu::SurfaceConfiguration,
@@ -23,16 +25,16 @@ pub struct FrontWgpu<'a> {
     particle_buffer: wgpu::Buffer,
 
     pub sim: Simulation,
-    pub runtime_config: &'a RuntimeConfig
+    pub runtime_config: RuntimeConfig
 }
 
 
-impl<'a> FrontWgpu<'a> {
-    pub async fn new(window: &'a winit::window::Window, sim: Simulation, runtime_config: &'a RuntimeConfig) -> Self {
+impl FrontWgpu {
+    pub async fn new(window: Arc<winit::window::Window>, sim: Simulation, runtime_config: RuntimeConfig) -> Self {
         let phys_size = window.inner_size();
 
         let instance = wgpu::Instance::default();
-        let surface = instance.create_surface(window).unwrap();
+        let surface = instance.create_surface(Arc::clone(&window)).unwrap();
         let adapter = instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,
             compatible_surface: Some(&surface),
@@ -110,6 +112,7 @@ impl<'a> FrontWgpu<'a> {
         });
 
         Self {
+            _window: window,
             surface, 
             device, 
             queue, 
@@ -178,5 +181,14 @@ impl<'a> FrontWgpu<'a> {
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
+    }
+
+    pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
+        if new_size.width > 0 && new_size.height > 0 {
+            self.phys_size = new_size;
+            self.surf_config.width = new_size.width;
+            self.surf_config.height = new_size.height;
+            self.surface.configure(&self.device, &self.surf_config);
+        }
     }
 }

@@ -1,11 +1,14 @@
 use flip_sim_rs::simulation::*;
 use flip_sim_rs::front_wgpu::*;
-use flip_sim_rs::front::*;
 
 use std::sync::Arc;
 
 use winit::{
-    application::ApplicationHandler, event::*, event_loop::{ActiveEventLoop, EventLoop}, keyboard::{KeyCode, PhysicalKey}, window::Window
+    application::ApplicationHandler, 
+    event::*, 
+    event_loop::*,
+    keyboard::{KeyCode, PhysicalKey}, 
+    window::*
 };
 
 
@@ -40,6 +43,82 @@ fn main() {
     };
 
     let sim = Simulation::new(&config); 
-    let mut front = FrontCLI::new(sim, runtime_config);
-    front.run()
+
+    let event_loop = EventLoop::new().unwrap();
+    event_loop.set_control_flow(ControlFlow::Poll);
+
+    let mut app = App {
+        window: None,
+        front: None,
+        sim: Some(sim),
+        runtime_config,
+    };
+
+    event_loop.run_app(&mut app).unwrap();
 }
+
+struct App {
+    window: Option<Arc<Window>>,
+    front: Option<FrontWgpu>,
+    sim: Option<Simulation>,
+    runtime_config: config::RuntimeConfig,
+}
+
+
+impl ApplicationHandler for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        if self.window.is_some() {
+            return; 
+        }
+ 
+        let window = Arc::new(
+            event_loop
+                .create_window(
+                    WindowAttributes::default()
+                        .with_title("flip-sim-rs")
+                        .with_inner_size(winit::dpi::LogicalSize::new(800, 800)),
+                )
+                .unwrap(),
+        );
+ 
+        let sim = self.sim.take().unwrap();
+        let front = pollster::block_on(FrontWgpu::new(Arc::clone(&window), sim, self.runtime_config.clone()));
+ 
+        self.window = Some(window);
+        self.front = Some(front);
+    }
+ 
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _window_id: winit::window::WindowId, event: WindowEvent) {
+        let Some(front) = self.front.as_mut() else { return };
+ 
+        match event {
+            WindowEvent::CloseRequested => { event_loop.exit(); }
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(key),
+                        state: ElementState::Pressed,
+                        ..
+                    },
+                ..
+            } => match key {
+                KeyCode::Escape => event_loop.exit(),
+                _ => {}
+            },
+ 
+            WindowEvent::Resized(new_size) => {
+                front.resize(new_size);
+            }
+ 
+            WindowEvent::RedrawRequested => {
+                front.sim.simulate(&front.runtime_config);
+                front.render();
+                self.window.as_ref().unwrap().request_redraw();
+            }
+ 
+            _ => {}
+        }
+    }
+}
+ 
+
