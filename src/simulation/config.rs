@@ -5,7 +5,7 @@ pub struct Config {
     pub density: f32,
     pub spacing: f32,
     pub particle_radius: f32,
-    pub max_particles: i32,
+    pub max_particles: usize,
     // pub pic_flip_ratio: f32,
     // pub gravity: (f32,f32),
     // pub dt: f32,
