@@ -19,7 +19,7 @@ fn main() {
         spacing: 1.0,
         density: 1.0,
         particle_radius: 0.5,
-        max_particles: 1000,
+        max_particles: 500,
         // pic_flip_ratio:0.9,
         // gravity: (0.0,9.81),
         // dt: 1.0/30.0,
@@ -27,7 +27,7 @@ fn main() {
     };
 
     let runtime_config = config::RuntimeConfig {
-        dt: 1.0 / 1000.0,
+        dt: 1.0 / 30.0,
         gravity: (0.0, 0.91),
         flip_ratio: 0.9,
         num_pressure_iters: 50,
@@ -35,9 +35,9 @@ fn main() {
         over_relaxation: 1.9,
         compensate_drift: true,
         separate_particles: false,
-        obstacle_x: 4.0,
-        obstacle_y: 4.0,
-        obstacle_radius: 1.5,
+        obstacle_x: 0.0,
+        obstacle_y: 0.0,
+        obstacle_radius: 0.1,
         obstacle_vel_x: 0.0,
         obstacle_vel_y: 0.0,
     };

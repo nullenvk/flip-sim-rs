@@ -63,7 +63,7 @@ impl Simulation {
                     s = 0.0;
                 }
                 
-                let cell_nr = y * f_num_x + x;
+                let cell_nr = x * f_num_y + y;
                 read_grid[cell_nr].s = s;
                 if s == 0.0 {
                     read_grid[cell_nr].cell_type = CellTypes::Solid;
@@ -132,7 +132,7 @@ impl Simulation {
     }
 
     pub fn get_cell(&self, x: usize, y: usize) -> &Cell {
-        &self.read_grid[y * self.f_num_x + x]
+        &self.read_grid[x * self.f_num_y + y]
     }
 
     pub fn integrate_particles(&mut self, dt:f32,gravity: (f32,f32)) {
@@ -204,23 +204,39 @@ impl Simulation {
 
                         for j in start..end {
                             let id2 = self.cell_particle_ids[j];
-                            if i == id2 { continue; } // Don't collide with self
-
+                            if i == id2 { continue; }
+                        
                             let px2 = self.particles[id2].x;
                             let py2 = self.particles[id2].y;
-
+                        
                             let dx = px - px2;
                             let dy = py - py2;
                             let d2 = dx * dx + dy * dy;
-
-                            // 1e-8 prevents division by zero if particles are exactly stacked
+                        
                             if d2 < min_dist2 && d2 > 1e-8 {
                                 let d = d2.sqrt();
                                 let push = 0.5 * (min_dist - d) / d;
-                                
-                                // Accumulate the push in our local buffer
-                                px += dx * push;
-                                py += dy * push;
+                            
+                                // rozsuń obie cząstki
+                                if i < id2 {
+                                    let (left, right) = self.particles.split_at_mut(id2);
+                                    left[i].x += dx * push;
+                                    left[i].y += dy * push;
+                                    right[0].x -= dx * push;
+                                    right[0].y -= dy * push;
+                                    // 🔽 Dodaj to:
+                                    px += dx * push;
+                                    py += dy * push;
+                                } else {
+                                    let (left, right) = self.particles.split_at_mut(i);
+                                    right[0].x += dx * push;
+                                    right[0].y += dy * push;
+                                    left[id2].x -= dx * push;
+                                    left[id2].y -= dy * push;
+                                    // 🔽 Dodaj to:
+                                    px += dx * push;
+                                    py += dy * push;
+                                }
                             }
                         }
                     }
@@ -475,6 +491,13 @@ impl Simulation {
     }
     
     pub fn solve_incompressibility(&mut self, num_iters: usize, dt: f32, over_relaxation: f32, compensate_drift: bool) {
+        
+        for cell in self.read_grid.iter_mut() {
+        cell.prev_u = cell.u;
+        cell.prev_v = cell.v;
+        cell.p = 0.0;          // przy okazji zeruj ciśnienie, bo JS też to robi
+    }
+
         let n = self.f_num_y;
         let cp = self.config.density * self.h / dt;
 
