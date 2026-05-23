@@ -17,13 +17,13 @@ pub struct Simulation {
     pub f_num_x: usize,
     pub f_num_y: usize,
     pub f_num_cells: usize,
-    pub h: f64,
-    pub f_inv_spacing: f64,
+    pub h: f32,
+    pub f_inv_spacing: f32,
 
     pub particles: Vec<Particle>,
 
-    pub particle_rest_density: f64,
-    pub p_inv_spacing: f64,
+    pub particle_rest_density: f32,
+    pub p_inv_spacing: f32,
     pub p_num_x: usize,
     pub p_num_y: usize,
     pub p_num_cells: usize,
@@ -43,15 +43,15 @@ impl Simulation {
     pub fn new(config: &Config) -> Simulation {
 
         // let total_cells = config.width * config.height;
-        let f_num_x = (config.width as f64 / config.spacing).floor() as usize + 1;
-        let f_num_y = (config.height as f64 / config.spacing).floor() as usize + 1;
+        let f_num_x = (config.width as f32 / config.spacing).floor() as usize + 1;
+        let f_num_y = (config.height as f32 / config.spacing).floor() as usize + 1;
         let f_num_cells = f_num_x * f_num_y;
-        let h = f64::max(config.width as f64 / f_num_x as f64, config.height as f64 / f_num_y as f64);
+        let h = f32::max(config.width as f32 / f_num_x as f32, config.height as f32 / f_num_y as f32);
         let f_inv_spacing = 1.0 / h;
 
         let p_inv_spacing = 1.0 / (2.2 * config.particle_radius);
-        let p_num_x = (config.width as f64 * p_inv_spacing).floor() as usize + 1;
-        let p_num_y = (config.height as f64 * p_inv_spacing).floor() as usize + 1;
+        let p_num_x = (config.width as f32 * p_inv_spacing).floor() as usize + 1;
+        let p_num_y = (config.height as f32 * p_inv_spacing).floor() as usize + 1;
         let p_num_cells = p_num_x * p_num_y;
 
         let mut read_grid = vec![Cell::default(); f_num_cells];
@@ -79,7 +79,7 @@ impl Simulation {
         let mut num_particles = 0;
         let r = config.particle_radius;
         let dx = 2.0 * r;
-        let dy = f64::sqrt(3.0) / 2.0 * dx;
+        let dy = f32::sqrt(3.0) / 2.0 * dx;
         
         let mut p_idx = 0;
         let particles_per_row = 50; // Adjust to make the fluid block wider or narrower
@@ -95,8 +95,8 @@ impl Simulation {
                 // from perfectly stacking and causing a division by zero later
                 let jitter = if p_idx % 2 == 0 { 1e-4 } else { -1e-4 };
 
-                particles[p_idx].x = h + r + dx * i as f64 + if j % 2 == 0 { 0.0 } else { r } + jitter;
-                particles[p_idx].y = h + r + dy * j as f64;
+                particles[p_idx].x = h + r + dx * i as f32 + if j % 2 == 0 { 0.0 } else { r } + jitter;
+                particles[p_idx].y = h + r + dy * j as f32;
                 particles[p_idx].color = (0.0, 0.5, 1.0); 
                 
                 p_idx += 1;
@@ -135,7 +135,7 @@ impl Simulation {
         &self.read_grid[y * self.f_num_x + x]
     }
 
-    pub fn integrate_particles(&mut self, dt:f64,gravity: (f64,f64)) {
+    pub fn integrate_particles(&mut self, dt:f32,gravity: (f32,f32)) {
         let (gx,gy) = gravity;
         // we need take() because num_particles != max_particles
         for part in self.particles.iter_mut().take(self.num_particles) {
@@ -244,17 +244,17 @@ impl Simulation {
 
         for i in 0..self.num_particles{
             let p = &self.particles[i];
-            let max_bound_x = f64::max(h, (self.f_num_x as f64 - 1.0) * h);
-            let max_bound_y = f64::max(h, (self.f_num_y as f64 - 1.0) * h);
+            let max_bound_x = f32::max(h, (self.f_num_x as f32 - 1.0) * h);
+            let max_bound_y = f32::max(h, (self.f_num_y as f32 - 1.0) * h);
             let x = p.x.clamp(h, max_bound_x);
             let y = p.y.clamp(h, max_bound_y);
 
             let x0 = (((x - h2) * h1).floor() as usize).min(self.f_num_x.saturating_sub(2));
-            let tx = ((x - h2) - x0 as f64 * h) * h1;
+            let tx = ((x - h2) - x0 as f32 * h) * h1;
             let x1 = (x0 + 1).min(self.f_num_x.saturating_sub(2));
 
             let y0 = (((y - h2) * h1).floor() as usize).min(self.f_num_y.saturating_sub(2));
-            let ty = ((y - h2) - y0 as f64 * h) * h1;
+            let ty = ((y - h2) - y0 as f32 * h) * h1;
             let y1 = (y0 + 1).min(self.f_num_y.saturating_sub(2));
 
             let sx = 1.0 - tx;
@@ -277,23 +277,23 @@ impl Simulation {
                 }
             }
             if num_fluid_cells > 0{
-                self.particle_rest_density = sum / num_fluid_cells as f64;
+                self.particle_rest_density = sum / num_fluid_cells as f32;
             }
         }
 
         std::mem::swap(&mut self.read_grid, &mut self.write_grid);
     }
 
-    pub fn handle_particle_collisions(&mut self, obstacle_x: f64, obstacle_y: f64, obstacle_radius: f64, obstacle_vel_x: f64, obstacle_vel_y: f64) {
+    pub fn handle_particle_collisions(&mut self, obstacle_x: f32, obstacle_y: f32, obstacle_radius: f32, obstacle_vel_x: f32, obstacle_vel_y: f32) {
         let h = 1.0 / self.f_inv_spacing;
         let r = self.config.particle_radius;
         let min_dist = obstacle_radius + r;
         let min_dist2 = min_dist * min_dist;
 
         let min_x = h + r;
-        let max_x = (self.f_num_x as f64 - 1.0) * h - r;
+        let max_x = (self.f_num_x as f32 - 1.0) * h - r;
         let min_y = h + r;
-        let max_y = (self.f_num_y as f64 - 1.0) * h - r;
+        let max_y = (self.f_num_y as f32 - 1.0) * h - r;
 
         for i in 0..self.num_particles {
             let mut x = self.particles[i].x;
@@ -331,7 +331,7 @@ impl Simulation {
     }
 
     // to jest tak brzydkie że będzie trzeba refactorować xd
-    pub fn transfer_velocities(&mut self, to_grid: bool, flip_ratio: f64) {
+    pub fn transfer_velocities(&mut self, to_grid: bool, flip_ratio: f32) {
         let n = self.f_num_y;
         let h = self.h;
         let h1 = self.f_inv_spacing;
@@ -367,18 +367,18 @@ impl Simulation {
 
             for i in 0..self.num_particles {
                 let p = &self.particles[i];
-                let max_bound_x = f64::max(h, (self.f_num_x as f64 - 1.0) * h);
-                let max_bound_y = f64::max(h, (self.f_num_y as f64 - 1.0) * h);
+                let max_bound_x = f32::max(h, (self.f_num_x as f32 - 1.0) * h);
+                let max_bound_y = f32::max(h, (self.f_num_y as f32 - 1.0) * h);
                 let x = p.x.clamp(h, max_bound_x);
                 let y = p.y.clamp(h, max_bound_y);
 
                 // Safe bounds
                 let x0 = (((x - dx) * h1).floor() as usize).min(self.f_num_x.saturating_sub(2));
-                let tx = ((x - dx) - x0 as f64 * h) * h1;
+                let tx = ((x - dx) - x0 as f32 * h) * h1;
                 let x1 = (x0 + 1).min(self.f_num_x.saturating_sub(2));
 
                 let y0 = (((y - dy) * h1).floor() as usize).min(self.f_num_y.saturating_sub(2));
-                let ty = ((y - dy) - y0 as f64 * h) * h1;
+                let ty = ((y - dy) - y0 as f32 * h) * h1;
                 let y1 = (y0 + 1).min(self.f_num_y.saturating_sub(2));
 
                 let sx = 1.0 - tx;
@@ -474,7 +474,7 @@ impl Simulation {
         }
     }
     
-    pub fn solve_incompressibility(&mut self, num_iters: usize, dt: f64, over_relaxation: f64, compensate_drift: bool) {
+    pub fn solve_incompressibility(&mut self, num_iters: usize, dt: f32, over_relaxation: f32, compensate_drift: bool) {
         let n = self.f_num_y;
         let cp = self.config.density * self.h / dt;
 
@@ -543,7 +543,7 @@ impl Simulation {
 
                 let m = 0.25;
                 let num = (val / m).floor() as i32;
-                let s = (val - num as f64 * m) / m;
+                let s = (val - num as f32 * m) / m;
                 
                 self.write_grid[i].color = match num {
                     0 => (0.0, s, 1.0),

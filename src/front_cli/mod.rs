@@ -26,7 +26,7 @@ impl front::FrontEnd for FrontCLI {
             self.sim.simulate(&self.runtime_config);
             self.draw_frame();
 
-            thread::sleep(Duration::from_secs_f64(self.runtime_config.dt));
+            thread::sleep(Duration::from_secs_f32(self.runtime_config.dt));
         }
     }
 

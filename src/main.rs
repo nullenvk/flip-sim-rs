@@ -1,6 +1,13 @@
 use flip_sim_rs::simulation::*;
-use flip_sim_rs::front_cli::*;
+use flip_sim_rs::front_wgpu::*;
 use flip_sim_rs::front::*;
+
+use std::sync::Arc;
+
+use winit::{
+    application::ApplicationHandler, event::*, event_loop::{ActiveEventLoop, EventLoop}, keyboard::{KeyCode, PhysicalKey}, window::Window
+};
+
 
 fn main() {
     let config = config::Config {
