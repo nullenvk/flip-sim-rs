@@ -1,5 +1,5 @@
 use crate::simulation::Simulation; 
-
+use crate::simulation::cell::CellTypes;
 use crate::front;
 
 use std::{thread, time::Duration};
@@ -41,7 +41,7 @@ impl FrontCLI {
         let config = &self.sim.config;
         for y in 0..config.height {
             for x in 0..config.width {
-                let c = if self.sim.get_cell(x,y).test {'X'} else {' '};
+                let c = if self.sim.get_cell(x,y).cell_type == CellTypes::Solid {'X'} else {' '};
 
                 print!("{}", c);
             }

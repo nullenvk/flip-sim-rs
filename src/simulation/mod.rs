@@ -1,5 +1,6 @@
 pub mod config;
 pub mod cell;
+use crate::simulation::cell::CellTypes;
 
 use config::Config;
 use cell::Cell;
@@ -23,7 +24,7 @@ impl Simulation {
             grid: vec![Cell::default(); total_cells]
         };
 
-        sim.grid[0] = Cell { test: true };
+        sim.grid[0] = Cell { cell_type: CellTypes::Solid };
 
         sim
     }

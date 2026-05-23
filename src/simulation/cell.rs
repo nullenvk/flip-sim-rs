@@ -1,12 +1,13 @@
-#[derive(Debug, Clone, Copy)]
-enum CellType{Solid,Liquid,Gas}
+#[derive(Debug, Clone, Copy,PartialEq)]
+pub enum CellTypes{Solid,Liquid,Gas}
 
+#[derive(Debug, Clone, Copy)]
 pub struct Cell {
-    pub type: CellType,
+    pub cell_type: CellTypes,
 }
 
 impl Default for Cell {
     fn default() -> Self {
-        Cell { test: false }
+        Cell { cell_type: CellTypes::Liquid }
     }
 }

@@ -4,10 +4,10 @@ pub struct Config {
     pub height: usize,
     pub density: f64,
     pub spacing: f64,
-    pub particleRadius: f64,
-    pub maxParticles: f64,
-    pub picFlipRaTio: f64,
+    pub particle_radius: f64,
+    pub max_particles: f64,
+    pub pic_flip_ratio: f64,
     pub gravity: (f64,f64),
     pub dt: f64,
-    pub overRelaxation: f64
+    pub over_relaxation: f64
 }
