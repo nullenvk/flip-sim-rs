@@ -1,5 +1,6 @@
 use crate::simulation::Simulation; 
 use crate::simulation::cell::*;
+use crate::simulation::config::*;
 use crate::front;
 
 use std::{thread, time::Duration};
@@ -7,30 +8,25 @@ use std::{thread, time::Duration};
 #[derive(Debug)]
 pub struct FrontCLI {
     sim: Simulation,
-
-    frames_per_second: f32
+    runtime_config: RuntimeConfig
 }
 
 impl front::FrontEnd for FrontCLI {
-    fn new(sim: Simulation) -> Self {
+    fn new(sim: Simulation, runtime_config: RuntimeConfig) -> Self {
         Self {
             sim,
-            frames_per_second: 2.0
+            runtime_config
         }
-    }
-
-    fn init(&mut self) {
-
     }
 
     fn run(&mut self) {
         loop {
             println!("Frame!");
 
-            self.sim.step();
+            self.sim.simulate(&self.runtime_config);
             self.draw_frame();
 
-            thread::sleep(Duration::from_secs_f32(1.0 / self.frames_per_second));
+            thread::sleep(Duration::from_secs_f64(self.runtime_config.dt));
         }
     }
 
@@ -38,15 +34,27 @@ impl front::FrontEnd for FrontCLI {
 
 impl FrontCLI {
     fn draw_frame(&self) {
-        let config = &self.sim.config;
-        for y in 0..config.height {
-            for x in 0..config.width {
-                let c = if self.sim.get_cell(x,y).cell_type == CellTypes::Solid {'X'} else {' '};
+        let (w,h) = (self.sim.f_num_x, self.sim.f_num_y);
 
-                print!("{}", c);
+        // clear screen
+        print!("\x1B[2J\x1B[1;1H");
+
+        for y in (0..h).rev() {
+            for x in 0..w {
+                let cell = self.sim.get_cell(x, y);
+                
+                let c = match cell.cell_type {
+                    CellTypes::Solid => '#',
+                    CellTypes::Liquid=> '~',
+                    CellTypes::Gas=> ' ',
+                };
+
+                print!("{}{}", c, c);
             }
 
             println!("");
         }
     }
+
+
 }

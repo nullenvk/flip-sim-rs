@@ -1,10 +1,10 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Particle {
-    pub x: f32,
-    pub y: f32,
-    pub vx: f32,
-    pub vy: f32,
-    pub color: (f32, f32, f32),
+    pub x: f64,
+    pub y: f64,
+    pub vx: f64,
+    pub vy: f64,
+    pub color: (f64, f64, f64),
 }
 
 impl Default for Particle {

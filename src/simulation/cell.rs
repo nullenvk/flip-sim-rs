@@ -5,17 +5,17 @@ pub enum CellTypes{Solid,Liquid,Gas}
 #[derive(Debug, Clone, Copy)]
 pub struct Cell {
     pub cell_type: CellTypes,
-    pub color: (f32,f32,f32),
+    pub color: (f64,f64,f64),
 
-    pub u: f32,
-    pub v: f32,
-    pub du: f32,
-    pub dv: f32,
-    pub prev_u: f32,
-    pub prev_v: f32,
-    pub p: f32,
-    pub s: f32,
-    pub particle_density: f32,
+    pub u: f64,
+    pub v: f64,
+    pub du: f64,
+    pub dv: f64,
+    pub prev_u: f64,
+    pub prev_v: f64,
+    pub p: f64,
+    pub s: f64,
+    pub particle_density: f64,
 }
 
 impl Default for Cell {
@@ -31,7 +31,7 @@ impl Default for Cell {
             prev_u: 0.0, 
             prev_v: 0.0, 
             p: 0.0, 
-            s: 0.0, 
+            s: 1.0, 
             particle_density: 0.0,
         }
     }

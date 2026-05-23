@@ -6,9 +6,6 @@ use config::*;
 use cell::*;
 use particle::*;
 
-use rand::prelude::*;
-
-
 #[derive(Debug)]
 pub struct Simulation {
     pub config: Config,
@@ -20,13 +17,13 @@ pub struct Simulation {
     pub f_num_x: usize,
     pub f_num_y: usize,
     pub f_num_cells: usize,
-    pub h: f32,
-    pub f_inv_spacing: f32,
+    pub h: f64,
+    pub f_inv_spacing: f64,
 
     pub particles: Vec<Particle>,
 
-    pub particle_rest_density: f32,
-    pub p_inv_spacing: f32,
+    pub particle_rest_density: f64,
+    pub p_inv_spacing: f64,
     pub p_num_x: usize,
     pub p_num_y: usize,
     pub p_num_cells: usize,
@@ -34,6 +31,7 @@ pub struct Simulation {
     pub num_cell_particles: Vec<i32>,
     pub first_cell_particle: Vec<usize>,
     pub cell_particle_ids: Vec<usize>,
+    pub particle_cell_nrs: Vec<usize>, // <--- Add this
 
     pub num_particles: usize
 
@@ -45,27 +43,73 @@ impl Simulation {
     pub fn new(config: &Config) -> Simulation {
 
         // let total_cells = config.width * config.height;
-        let f_num_x = (config.width as f32 / config.spacing).floor() as usize + 1;
-        let f_num_y = (config.height as f32 / config.spacing).floor() as usize + 1;
+        let f_num_x = (config.width as f64 / config.spacing).floor() as usize + 1;
+        let f_num_y = (config.height as f64 / config.spacing).floor() as usize + 1;
         let f_num_cells = f_num_x * f_num_y;
-        let h = f32::max(config.width as f32 / f_num_x as f32, config.height as f32 / f_num_y as f32);
+        let h = f64::max(config.width as f64 / f_num_x as f64, config.height as f64 / f_num_y as f64);
         let f_inv_spacing = 1.0 / h;
 
         let p_inv_spacing = 1.0 / (2.2 * config.particle_radius);
-        let p_num_x = (config.width as f32 * p_inv_spacing).floor() as usize + 1;
-        let p_num_y = (config.height as f32 * p_inv_spacing).floor() as usize + 1;
+        let p_num_x = (config.width as f64 * p_inv_spacing).floor() as usize + 1;
+        let p_num_y = (config.height as f64 * p_inv_spacing).floor() as usize + 1;
         let p_num_cells = p_num_x * p_num_y;
 
         let mut read_grid = vec![Cell::default(); f_num_cells];
-        read_grid[0].cell_type = CellTypes::Solid; // TODO: remove after testing 
+        // tank boundaries
+         for x in 0..f_num_x {
+            for y in 0..f_num_y {
+                let mut s = 1.0; 
+                if x == 0 || x == f_num_x - 1 || y == 0  || y == f_num_y - 1 {
+                    s = 0.0;
+                }
+                
+                let cell_nr = y * f_num_x + x;
+                read_grid[cell_nr].s = s;
+                if s == 0.0 {
+                    read_grid[cell_nr].cell_type = CellTypes::Solid;
+                }
+            }
+        }
 
         let write_grid = read_grid.clone();
+        
+        let mut particles = vec![Particle::default(); config.max_particles];
+
+        // spwaning
+        let mut num_particles = 0;
+        let r = config.particle_radius;
+        let dx = 2.0 * r;
+        let dy = f64::sqrt(3.0) / 2.0 * dx;
+        
+        let mut p_idx = 0;
+        let particles_per_row = 50; // Adjust to make the fluid block wider or narrower
+        let spawn_height = config.max_particles / particles_per_row + 1;
+        
+        'spawn: for j in 0..spawn_height {
+            for i in 0..particles_per_row {
+                if p_idx >= config.max_particles {
+                    break 'spawn;
+                }
+                
+                // Add a microscopic jitter to the X position to prevent particles 
+                // from perfectly stacking and causing a division by zero later
+                let jitter = if p_idx % 2 == 0 { 1e-4 } else { -1e-4 };
+
+                particles[p_idx].x = h + r + dx * i as f64 + if j % 2 == 0 { 0.0 } else { r } + jitter;
+                particles[p_idx].y = h + r + dy * j as f64;
+                particles[p_idx].color = (0.0, 0.5, 1.0); 
+                
+                p_idx += 1;
+                num_particles += 1;
+            }
+        }
+
 
         Simulation {
             config: config.clone(),
             read_grid,
             write_grid,
-            particles: vec![Particle::default(); config.max_particles],
+            particles,
 
             f_num_x,
             f_num_y,
@@ -80,9 +124,10 @@ impl Simulation {
             p_num_cells,
 
             num_cell_particles: vec![0;p_num_cells],
-            first_cell_particle: vec![0;config.max_particles + 1],
+            first_cell_particle: vec![0;p_num_cells + 1],
             cell_particle_ids: vec![0;config.max_particles],
-            num_particles: 0
+            particle_cell_nrs: vec![0; config.max_particles],
+            num_particles 
         }
     }
 
@@ -90,13 +135,7 @@ impl Simulation {
         &self.read_grid[y * self.f_num_x + x]
     }
 
-    pub fn step(&mut self) {
-        let mut rng = rand::rng();
-
-        self.read_grid.shuffle(&mut rng);
-    }
-
-    pub fn integrate_particles(&mut self, dt:f32,gravity: (f32,f32)) {
+    pub fn integrate_particles(&mut self, dt:f64,gravity: (f64,f64)) {
         let (gx,gy) = gravity;
         // we need take() because num_particles != max_particles
         for part in self.particles.iter_mut().take(self.num_particles) {
@@ -108,86 +147,88 @@ impl Simulation {
     }
 
     pub fn push_particles_apart(&mut self, num_iters: usize){
-        self.num_cell_particles.fill(0);
-
-        for i in 0..self.num_particles{
-            let p = &self.particles[i];
-            let (x,y) = (p.x, p.y);
-
-            let xi = ((x*self.p_inv_spacing).floor() as i32).clamp(0, (self.p_num_x - 1) as i32) as usize;
-            let yi = ((y*self.p_inv_spacing).floor() as i32).clamp(0, (self.p_num_y - 1) as i32) as usize;
-            let cell_nr = xi * self.p_num_y + yi;
-            self.num_cell_particles[cell_nr] += 1;
-        }
-
-        let mut first = 0;
-        for i in 0..self.p_num_cells{
-            first += self.num_cell_particles[i];
-            self.first_cell_particle[i] = first as usize;
-        }
-        self.first_cell_particle[self.p_num_cells] = first as usize;
-
-        for i in 0..self.num_particles {
-            let p = &self.particles[i];
-            let (x,y) = (p.x, p.y);
-
-            let xi = ((x * self.p_inv_spacing).floor() as i32)
-                .clamp(0, (self.p_num_x - 1) as i32) as usize;
-            let yi = ((y * self.p_inv_spacing).floor() as i32)
-                .clamp(0, (self.p_num_y - 1) as i32) as usize;
-            let cell_nr = xi * self.p_num_y + yi;
-            self.first_cell_particle[cell_nr] -= 1;
-            let idx = self.first_cell_particle[cell_nr];
-            self.cell_particle_ids[idx] = i;
-        }
-
         let min_dist = 2.0 * self.config.particle_radius;
         let min_dist2 = min_dist * min_dist;
 
-        for _iter in 0..num_iters{
-            for i in 0..self.num_particles{
+        for _ in 0..num_iters {
+            self.num_cell_particles.fill(0);
+
+            // Pass 1: Hash and Cache the cell IDs
+            for i in 0..self.num_particles {
                 let p = &self.particles[i];
-                let (px,py) = (p.x, p.y);
+                let xi = ((p.x * self.p_inv_spacing).floor() as i32).clamp(0, (self.p_num_x - 1) as i32) as usize;
+                let yi = ((p.y * self.p_inv_spacing).floor() as i32).clamp(0, (self.p_num_y - 1) as i32) as usize;
+                let cell_nr = xi * self.p_num_y + yi;
+                
+                self.num_cell_particles[cell_nr] += 1;
+                self.particle_cell_nrs[i] = cell_nr;
+            }
 
-                let pxi = (px*self.p_inv_spacing).floor() as i32;
-                let pyi = (py*self.p_inv_spacing).floor() as i32;
-                let x0 = (pxi -1 ).max(0);
-                let y0 = (pyi -1 ).max(0);
-                let x1 = (pxi+1).min(self.p_num_x as i32 -1) as i32;
-                let y1 = (pyi+1).min(self.p_num_y as i32 -1) as i32;
+            // Pass 2: Prefix Sum
+            let mut first = 0;
+            for i in 0..self.p_num_cells {
+                first += self.num_cell_particles[i];
+                self.first_cell_particle[i] = first as usize;
+            }
+            self.first_cell_particle[self.p_num_cells] = first as usize;
 
-                for xi in x0..x1{
-                    for yi in y0..y1{
+            // Pass 3: Sort particles into cells
+            for i in 0..self.num_particles {
+                let cell_nr = self.particle_cell_nrs[i]; 
+                self.first_cell_particle[cell_nr] -= 1;
+                let idx = self.first_cell_particle[cell_nr];
+                self.cell_particle_ids[idx] = i;
+            }
+
+            // Pass 4: Push colliding particles apart
+            for i in 0..self.num_particles {
+                // Buffer the active coordinates. This avoids holding a mutable reference 
+                // to self.particles[i] while reading from self.particles[id2].
+                let mut px = self.particles[i].x;
+                let mut py = self.particles[i].y;
+
+                let pxi = ((px * self.p_inv_spacing).floor() as i32).clamp(0, (self.p_num_x - 1) as i32);
+                let pyi = ((py * self.p_inv_spacing).floor() as i32).clamp(0, (self.p_num_y - 1) as i32);
+
+                // Look at neighboring cells (Inclusive range fixes the boundary bug!)
+                let x0 = (pxi - 1).max(0);
+                let y0 = (pyi - 1).max(0);
+                let x1 = (pxi + 1).min(self.p_num_x as i32 - 1);
+                let y1 = (pyi + 1).min(self.p_num_y as i32 - 1);
+
+                for xi in x0..=x1 {
+                    for yi in y0..=y1 {
                         let cell_nr = (xi * self.p_num_y as i32 + yi) as usize;
-                        let first = self.first_cell_particle[cell_nr];
-                        let last = self.first_cell_particle[cell_nr+1];
-                        for j in first..last{
-                            let id = self.cell_particle_ids[j];
-                            if id == i{
-                                continue;
-                            }
-                            let q = &self.particles[id];
-                            let (qx,qy) = (q.x, q.y);
+                        let start = self.first_cell_particle[cell_nr];
+                        let end = self.first_cell_particle[cell_nr + 1];
 
-                            let mut dx = qx - px;
-                            let mut dy = qy - py;
+                        for j in start..end {
+                            let id2 = self.cell_particle_ids[j];
+                            if i == id2 { continue; } // Don't collide with self
+
+                            let px2 = self.particles[id2].x;
+                            let py2 = self.particles[id2].y;
+
+                            let dx = px - px2;
+                            let dy = py - py2;
                             let d2 = dx * dx + dy * dy;
-                            if d2 > min_dist2 || d2 == 0.0{
-                                continue;
-                            }
-                            let d = d2.sqrt();
-                            let s = 0.5 * (min_dist - d) /d;
-                            dx = dx * s;
-                            dy = dy * s;
 
-                            
-                            self.particles[i].x -= dx;
-                            self.particles[i].y -= dy;
-                            self.particles[id].x += dx;
-                            self.particles[id].y += dy;
+                            // 1e-8 prevents division by zero if particles are exactly stacked
+                            if d2 < min_dist2 && d2 > 1e-8 {
+                                let d = d2.sqrt();
+                                let push = 0.5 * (min_dist - d) / d;
+                                
+                                // Accumulate the push in our local buffer
+                                px += dx * push;
+                                py += dy * push;
+                            }
                         }
                     }
                 }
+                
+                // Write the buffered coordinates safely back to the array
+                self.particles[i].x = px;
+                self.particles[i].y = py;
             }
         }
     }
@@ -203,16 +244,18 @@ impl Simulation {
 
         for i in 0..self.num_particles{
             let p = &self.particles[i];
-            let x = p.x.clamp(h, (self.f_num_x as f32 - 1.0) * h);
-            let y = p.y.clamp(h, (self.f_num_y as f32 - 1.0) * h);
+            let max_bound_x = f64::max(h, (self.f_num_x as f64 - 1.0) * h);
+            let max_bound_y = f64::max(h, (self.f_num_y as f64 - 1.0) * h);
+            let x = p.x.clamp(h, max_bound_x);
+            let y = p.y.clamp(h, max_bound_y);
 
-            let x0 = (((x - h2) * h1).floor() as usize).min(self.f_num_x - 2);
-            let tx = ((x - h2) - x0 as f32 * h) * h1;
-            let x1 = (x0 + 1).min(self.f_num_x - 2);
+            let x0 = (((x - h2) * h1).floor() as usize).min(self.f_num_x.saturating_sub(2));
+            let tx = ((x - h2) - x0 as f64 * h) * h1;
+            let x1 = (x0 + 1).min(self.f_num_x.saturating_sub(2));
 
-            let y0 = (((y - h2) * h1).floor() as usize).min(self.f_num_y - 2);
-            let ty = ((y - h2) - y0 as f32 * h) * h1;
-            let y1 = (y0 + 1).min(self.f_num_y - 2);
+            let y0 = (((y - h2) * h1).floor() as usize).min(self.f_num_y.saturating_sub(2));
+            let ty = ((y - h2) - y0 as f64 * h) * h1;
+            let y1 = (y0 + 1).min(self.f_num_y.saturating_sub(2));
 
             let sx = 1.0 - tx;
             let sy = 1.0 - ty;
@@ -234,23 +277,23 @@ impl Simulation {
                 }
             }
             if num_fluid_cells > 0{
-                self.particle_rest_density = sum / num_fluid_cells as f32;
+                self.particle_rest_density = sum / num_fluid_cells as f64;
             }
         }
 
         std::mem::swap(&mut self.read_grid, &mut self.write_grid);
     }
 
-    pub fn handle_particle_collisions(&mut self, obstacle_x: f32, obstacle_y: f32, obstacle_radius: f32, obstacle_vel_x: f32, obstacle_vel_y: f32) {
+    pub fn handle_particle_collisions(&mut self, obstacle_x: f64, obstacle_y: f64, obstacle_radius: f64, obstacle_vel_x: f64, obstacle_vel_y: f64) {
         let h = 1.0 / self.f_inv_spacing;
         let r = self.config.particle_radius;
         let min_dist = obstacle_radius + r;
         let min_dist2 = min_dist * min_dist;
 
         let min_x = h + r;
-        let max_x = (self.f_num_x as f32 - 1.0) * h - r;
+        let max_x = (self.f_num_x as f64 - 1.0) * h - r;
         let min_y = h + r;
-        let max_y = (self.f_num_y as f32 - 1.0) * h - r;
+        let max_y = (self.f_num_y as f64 - 1.0) * h - r;
 
         for i in 0..self.num_particles {
             let mut x = self.particles[i].x;
@@ -288,7 +331,7 @@ impl Simulation {
     }
 
     // to jest tak brzydkie że będzie trzeba refactorować xd
-    pub fn transfer_velocities(&mut self, to_grid: bool, flip_ratio: f32) {
+    pub fn transfer_velocities(&mut self, to_grid: bool, flip_ratio: f64) {
         let n = self.f_num_y;
         let h = self.h;
         let h1 = self.f_inv_spacing;
@@ -324,16 +367,19 @@ impl Simulation {
 
             for i in 0..self.num_particles {
                 let p = &self.particles[i];
-                let x = p.x.clamp(h, (self.f_num_x as f32 - 1.0) * h);
-                let y = p.y.clamp(h, (self.f_num_y as f32 - 1.0) * h);
+                let max_bound_x = f64::max(h, (self.f_num_x as f64 - 1.0) * h);
+                let max_bound_y = f64::max(h, (self.f_num_y as f64 - 1.0) * h);
+                let x = p.x.clamp(h, max_bound_x);
+                let y = p.y.clamp(h, max_bound_y);
 
-                let x0 = (((x - dx) * h1).floor() as usize).min(self.f_num_x - 2);
-                let tx = ((x - dx) - x0 as f32 * h) * h1;
-                let x1 = (x0 + 1).min(self.f_num_x - 2);
+                // Safe bounds
+                let x0 = (((x - dx) * h1).floor() as usize).min(self.f_num_x.saturating_sub(2));
+                let tx = ((x - dx) - x0 as f64 * h) * h1;
+                let x1 = (x0 + 1).min(self.f_num_x.saturating_sub(2));
 
-                let y0 = (((y - dy) * h1).floor() as usize).min(self.f_num_y - 2);
-                let ty = ((y - dy) - y0 as f32 * h) * h1;
-                let y1 = (y0 + 1).min(self.f_num_y - 2);
+                let y0 = (((y - dy) * h1).floor() as usize).min(self.f_num_y.saturating_sub(2));
+                let ty = ((y - dy) - y0 as f64 * h) * h1;
+                let y1 = (y0 + 1).min(self.f_num_y.saturating_sub(2));
 
                 let sx = 1.0 - tx;
                 let sy = 1.0 - ty;
@@ -428,7 +474,7 @@ impl Simulation {
         }
     }
     
-    pub fn solve_incompressibility(&mut self, num_iters: usize, dt: f32, over_relaxation: f32, compensate_drift: bool) {
+    pub fn solve_incompressibility(&mut self, num_iters: usize, dt: f64, over_relaxation: f64, compensate_drift: bool) {
         let n = self.f_num_y;
         let cp = self.config.density * self.h / dt;
 
@@ -497,7 +543,7 @@ impl Simulation {
 
                 let m = 0.25;
                 let num = (val / m).floor() as i32;
-                let s = (val - num as f32 * m) / m;
+                let s = (val - num as f64 * m) / m;
                 
                 self.write_grid[i].color = match num {
                     0 => (0.0, s, 1.0),
@@ -512,7 +558,7 @@ impl Simulation {
         std::mem::swap(&mut self.read_grid, &mut self.write_grid);
     }
 
-    pub fn simulate(&mut self, runtime: RuntimeConfig) {
+    pub fn simulate(&mut self, runtime: &RuntimeConfig) {
         self.integrate_particles(runtime.dt, runtime.gravity);
 
         if runtime.separate_particles {
