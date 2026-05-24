@@ -59,9 +59,12 @@ impl Simulation {
          for x in 0..f_num_x {
             for y in 0..f_num_y {
                 let mut s = 1.0; 
-                if x == 0 || x == f_num_x - 1 || y == 0  || y == f_num_y - 1 {
-                    s = 0.0;
-                }
+                // if x == 0 || x == f_num_x - 1 || y == 0  || y == f_num_y - 1 {
+                //     s = 0.0;
+                // }
+                if x == 0 || x == f_num_x - 1 || y == 0 {   // usuń y == f_num_y-1 (poprawka z chata, pewnio gówno warta)
+    s = 0.0;
+}
                 
                 let cell_nr = x * f_num_y + y;
                 read_grid[cell_nr].s = s;
@@ -320,6 +323,12 @@ impl Simulation {
             let d2 = dx * dx + dy * dy;
 
             if d2 < min_dist2 {
+
+                let d = d2.sqrt().max(1e-8); // unikaj dzielenia przez 0
+                let penetration = min_dist - d;
+                x += (dx / d) * penetration;
+                y += (dy / d) * penetration;
+
                 self.particles[i].vx = obstacle_vel_x;
                 self.particles[i].vy = obstacle_vel_y;
             }

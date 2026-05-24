@@ -14,30 +14,30 @@ use winit::{
 
 fn main() {
     let config = config::Config {
-        width: 30,
-        height: 30,
+        width: 160,
+        height: 90,
         spacing: 1.0,
-        density: 1.0,
-        particle_radius: 0.5,
-        max_particles: 500,
+        density: 1000.0,
+        particle_radius: 0.3,
+        max_particles: 10000,
         // pic_flip_ratio:0.9,
-        // gravity: (0.0,9.81),
+        // gravity: (0.0,9.81),W
         // dt: 1.0/30.0,
         // over_relaxation: 1.9
     };
 
     let runtime_config = config::RuntimeConfig {
-        dt: 1.0 / 30.0,
-        gravity: (0.0, 0.91),
+        dt: 1.0 / 60.0,
+        gravity: (20.0, -90.81),
         flip_ratio: 0.9,
         num_pressure_iters: 50,
         num_particle_iters: 2,
-        over_relaxation: 1.9,
+        over_relaxation: 1.0,
         compensate_drift: true,
-        separate_particles: false,
+        separate_particles: true,
         obstacle_x: 0.0,
         obstacle_y: 0.0,
-        obstacle_radius: 0.1,
+        obstacle_radius: 0.0,
         obstacle_vel_x: 0.0,
         obstacle_vel_y: 0.0,
     };
