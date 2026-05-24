@@ -18,8 +18,9 @@ pub struct ParticleInstance {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct Uniforms {
-    pub scale: f32,
-    pub _padding: [f32; 3], // 16-byte alignment
+    pub scale: [f32; 2],
+    pub is_particle: u32,
+    pub _padding: u32, // 16-byte alignment
 }
 
 
@@ -32,10 +33,16 @@ pub struct FrontWgpu {
     phys_size: winit::dpi::PhysicalSize<u32>,
 
     render_pipeline: wgpu::RenderPipeline,
-    particle_buffer: wgpu::Buffer,
 
-    uniform_buffer: wgpu::Buffer,
-    uniform_bind_group: wgpu::BindGroup,
+    particle_buffer: wgpu::Buffer,
+    particle_bind_group: wgpu::BindGroup,
+    
+    grid_buffer: wgpu::Buffer,
+    grid_bind_group: wgpu::BindGroup,
+
+    grid_uniform_buffer: wgpu::Buffer,
+    particle_uniform_buffer: wgpu::Buffer,
+    uniform_bind_group_layout: wgpu::BindGroupLayout,
 
     pub sim: Simulation,
     pub runtime_config: RuntimeConfig
@@ -70,6 +77,14 @@ impl FrontWgpu {
         };
         surface.configure(&device, &surf_config);
 
+        let grid_buffer_size = (sim.f_num_cells * std::mem::size_of::<ParticleInstance>()) as wgpu::BufferAddress;
+        let grid_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Grid Buffer"),
+            size: grid_buffer_size,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
         let particle_buffer_size = (sim.config.max_particles * std::mem::size_of::<ParticleInstance>()) as wgpu::BufferAddress;
         let particle_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Particle Buffer"),
@@ -78,14 +93,24 @@ impl FrontWgpu {
             mapped_at_creation: false,
         });
 
-        let uniform_data = Uniforms {
-            scale: (sim.config.particle_radius / sim.config.width  as f32) * 5.0,
-            _padding: [0.0, 0.0, 0.0]
-        };
+        let w = sim.config.width as f32;
+        let h = sim.config.height as f32;
 
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Uniform Buffer"),
-            contents: bytemuck::cast_slice(&[uniform_data]),
+        let grid_scale = [(sim.h / w) * 2.0, (sim.h / h) * 2.0];
+        let particle_scale = [
+            (sim.config.particle_radius * 2.0 / w) * 2.0, 
+            (sim.config.particle_radius * 2.0 / h) * 2.0
+        ];
+
+        let particle_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Particle Uniform Buffer"),
+            contents: bytemuck::cast_slice(&[Uniforms { scale: particle_scale, is_particle: 1, _padding: 0 }]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let grid_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Grid Uniform Buffer"),
+            contents: bytemuck::cast_slice(&[Uniforms { scale: grid_scale, is_particle: 0, _padding: 0 }]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -93,7 +118,7 @@ impl FrontWgpu {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -105,15 +130,16 @@ impl FrontWgpu {
             label: Some("uniform_bind_group_layout"),
         });
 
-        let uniform_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        let particle_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &uniform_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniform_buffer.as_entire_binding(),
-                }
-            ],
-            label: Some("uniform_bind_group")
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: particle_uniform_buffer.as_entire_binding() }],
+            label: Some("particle_bind_group"),
+        });
+
+        let grid_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &uniform_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: grid_uniform_buffer.as_entire_binding() }],
+            label: Some("grid_bind_group"),
         });
 
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
@@ -174,15 +200,19 @@ impl FrontWgpu {
             phys_size,
             render_pipeline, 
             particle_buffer, 
-            uniform_buffer,
-            uniform_bind_group,
+            grid_uniform_buffer,
+            particle_uniform_buffer,
+            uniform_bind_group_layout,
+            grid_bind_group,
+            grid_buffer,
+            particle_bind_group,
             sim,
             runtime_config
         }
     }
 
     pub fn render(&mut self) {
-        let instances: Vec<ParticleInstance> = self.sim.particles[..self.sim.num_particles]
+        let particle_instances: Vec<ParticleInstance> = self.sim.particles[..self.sim.num_particles]
             .iter()
             .map(|p| ParticleInstance {
                 // sim coords to gpu coords ( [-1.0, 1.0] )
@@ -193,11 +223,32 @@ impl FrontWgpu {
                 color: [p.color.0, p.color.1, p.color.2],
             })
             .collect();
+        
+        let mut grid_instances = Vec::with_capacity(self.sim.f_num_cells);
+    for x in 0..self.sim.f_num_x {
+        for y in 0..self.sim.f_num_y {
+            let cell = &self.sim.grid[x * self.sim.f_num_y + y];
+            
+            let pos_x = ((x as f32 + 0.5) * self.sim.h / self.sim.config.width as f32) * 2.0 - 1.0;
+            let pos_y = ((y as f32 + 0.5) * self.sim.h / self.sim.config.height as f32) * 2.0 - 1.0;
+            
+            grid_instances.push(ParticleInstance {
+                position: [pos_x, pos_y],
+                color: [cell.color.0, cell.color.1, cell.color.2],
+            });
+        }
+    }
 
         self.queue.write_buffer(
             &self.particle_buffer, 
             0, 
-            bytemuck::cast_slice(&instances)
+            bytemuck::cast_slice(&particle_instances)
+        );
+        
+        self.queue.write_buffer(
+            &self.grid_buffer, 
+            0, 
+            bytemuck::cast_slice(&grid_instances)
         );
 
 
@@ -229,9 +280,16 @@ impl FrontWgpu {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-
+            
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.uniform_bind_group, &[]);
+
+            // grid
+            render_pass.set_bind_group(0, &self.grid_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.grid_buffer.slice(..));
+            render_pass.draw(0..4, 0..self.sim.f_num_cells as u32);
+
+            // particle
+            render_pass.set_bind_group(0, &self.particle_bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.particle_buffer.slice(..));
             render_pass.draw(0..4, 0..self.sim.num_particles as u32);
         }

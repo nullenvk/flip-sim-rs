@@ -4,7 +4,9 @@ struct InstanceInput {
 };
 
 struct Uniforms {
-    scale: f32,
+    scale: vec2<f32>,
+    is_particle: u32,
+    _padding: u32,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -37,8 +39,10 @@ fn vs_main( @builtin(vertex_index) in_vertex_index: u32, instance: InstanceInput
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let dist = length(in.uv - vec2<f32>(0.5, 0.5));
-    if (dist > 0.5) { discard; }
+    if (uniforms.is_particle == 1u) {
+        let dist = length(in.uv - vec2<f32>(0.5, 0.5));
+        if (dist > 0.5) { discard; }
+    }
 
     return vec4<f32>(in.color, 1.0);
 }
