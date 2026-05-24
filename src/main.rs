@@ -24,7 +24,7 @@ fn main() {
 
     let runtime_config = config::RuntimeConfig {
         dt: 1.0 /60.0,
-        gravity: (6.7, -9.81),
+        gravity: (0.0, -9.81),
         flip_ratio: 0.9,
         num_pressure_iters: 100,
         num_particle_iters: 2,
@@ -37,8 +37,8 @@ fn main() {
         obstacle_vel_x: 0.0,
         obstacle_vel_y: 0.0,
 
-        draw_grid: true,
-        draw_particles: false,
+        draw_grid: false,
+        draw_particles: true,
     };
 
     let mut sim = Simulation::new(&config); 
