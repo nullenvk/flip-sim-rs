@@ -565,6 +565,8 @@ impl Simulation {
                     3 => (1.0, 1.0 - s, 0.0),
                     _ => (0.0, 0.0, 0.0),
                 };
+            } else {
+                self.grid[i].color = (0.0, 0.0, 0.0); // clear if gas
             }
         }
 
