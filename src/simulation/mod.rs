@@ -53,27 +53,9 @@ impl Simulation {
         let p_num_y = (config.height as f32 * p_inv_spacing).floor() as usize + 1;
         let p_num_cells = p_num_x * p_num_y;
 
-        let mut read_grid = vec![Cell::default(); f_num_cells];
-        // tank boundaries
-         for x in 0..f_num_x {
-            for y in 0..f_num_y {
-                let mut s = 1.0; 
-                // if x == 0 || x == f_num_x - 1 || y == 0  || y == f_num_y - 1 {
-                //     s = 0.0;
-                // }
-                if x == 0 || x == f_num_x - 1 || y == 0 {   // usuń y == f_num_y-1 (poprawka z chata, pewnio gówno warta)
-    s = 0.0;
-}
-                
-                let cell_nr = x * f_num_y + y;
-                read_grid[cell_nr].s = s;
-                if s == 0.0 {
-                    read_grid[cell_nr].cell_type = CellTypes::Solid;
-                }
-            }
-        }
+        let grid = vec![Cell::default(); f_num_cells];
+        
 
-        let grid = read_grid.clone();
         
         let mut particles = vec![Particle::default(); config.max_particles];
 
@@ -85,9 +67,10 @@ impl Simulation {
         
         let mut p_idx = 0;
         let particles_per_row = 50; // Adjust to make the fluid block wider or narrower
-        let spawn_height = config.max_particles / particles_per_row + 1;
-        
-        'spawn: for j in 0..spawn_height {
+        let spawn_height = config.max_particles / particles_per_row + 1 + 200;
+
+
+        'spawn: for j in (config.height as i32/2)..spawn_height as i32 {
             for i in 0..particles_per_row {
                 if p_idx >= config.max_particles {
                     break 'spawn;

@@ -20,10 +20,6 @@ fn main() {
         density: 1000.0,
         particle_radius: 0.3,
         max_particles: 10000,
-        // pic_flip_ratio:0.9,
-        // gravity: (0.0,9.81),W
-        // dt: 1.0/30.0,
-        // over_relaxation: 1.9
     };
 
     let runtime_config = config::RuntimeConfig {
@@ -42,7 +38,24 @@ fn main() {
         obstacle_vel_y: 0.0,
     };
 
-    let sim = Simulation::new(&config); 
+    let mut sim = Simulation::new(&config); 
+
+            // tank boundaries
+         for x in 0..sim.f_num_x {
+            for y in 0..sim.f_num_y {
+                let mut s = 1.0; 
+
+                if x == 0 || x == sim.f_num_x - 1 || y == 0 {   // usuń y == f_num_y-1 (poprawka z chata, pewnio gówno warta)
+                    s = 0.0;
+                }
+                
+                let cell_nr = x * sim.f_num_y + y;
+                sim.grid[cell_nr].s = s;
+                if s == 0.0 {
+                    sim.grid[cell_nr].cell_type = cell::CellTypes::Solid;
+                }
+            }
+        }
 
     let event_loop = EventLoop::new().unwrap();
     event_loop.set_control_flow(ControlFlow::Poll);
