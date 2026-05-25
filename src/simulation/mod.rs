@@ -130,8 +130,15 @@ impl Simulation {
             if ny < by.0 || ny > by.1 { part.vy = 0.0; }
             part.x += part.vx * dt;
             part.y += part.vy * dt;
-            if bx.0 <= bx.1 { part.x = part.x.clamp(bx.0, bx.1); }
-            if by.0 <= by.1 { part.y = part.y.clamp(by.0, by.1); }
+            let mut bad = false;
+            if bx.0 <= bx.1 { part.x = part.x.clamp(bx.0, bx.1); } else { bad = true; }
+            if by.0 <= by.1 { part.y = part.y.clamp(by.0, by.1); } else { bad = true; }
+            if bad {
+                part.vx *= -2.0;
+                part.vy *= -2.0;
+                part.x += part.vx * dt;
+                part.y += part.vy * dt;
+            }
         }
         self.particles = particles;
     }
@@ -206,30 +213,39 @@ impl Simulation {
                                     let (left_x, left_y) = self.clamp_particle_to_walls(self.particles[i].x, self.particles[i].y);
                                     let (right_x, right_y) = self.clamp_particle_to_walls(self.particles[id2].x, self.particles[id2].y);
                                     let (left, right) = self.particles.split_at_mut(id2);
-                                    left[i].x += dx * push;
-                                    left[i].y += dy * push;
-                                    right[0].x -= dx * push;
-                                    right[0].y -= dy * push;
 
-                                    if left_x.0 < left_x.1 { left[i].x = left[i].x.clamp(left_x.0, left_x.1) }
-                                    if left_y.0 < left_y.1 { left[i].y = left[i].y.clamp(left_y.0, left_y.1) }
-                                    if right_x.0 < right_x.1 { right[0].x = right[0].x.clamp(right_x.0, right_x.1) }
-                                    if right_y.0 < right_y.1 { left[0].y = left[0].y.clamp(right_y.0, right_y.1) }
+                                    if left_x.0 < left_x.1 && left_y.0 < left_y.1 {
+                                        left[i].x += dx * push;
+                                        left[i].y += dy * push;
+                                        left[i].x = left[i].x.clamp(left_x.0, left_x.1);
+                                        left[i].y = left[i].y.clamp(left_y.0, left_y.1);
+                                    }
+                                    if right_x.0 < right_x.1 && right_y.0 < right_y.1 {
+                                        right[0].x -= dx * push;
+                                        right[0].y -= dy * push;
+                                        right[0].x = right[0].x.clamp(right_x.0, right_x.1);
+                                        right[0].y = right[0].y.clamp(right_y.0, right_y.1);
+                                    }
                                     px += dx * push;
                                     py += dy * push;
                                 } else {
                                     let (left_x, left_y) = self.clamp_particle_to_walls(self.particles[id2].x, self.particles[id2].y);
                                     let (right_x, right_y) = self.clamp_particle_to_walls(self.particles[i].x, self.particles[i].y);
                                     let (left, right) = self.particles.split_at_mut(i);
-                                    right[0].x += dx * push;
-                                    right[0].y += dy * push;
-                                    left[id2].x -= dx * push;
-                                    left[id2].y -= dy * push;
 
-                                    if left_x.0 < left_x.1 { left[id2].x = left[id2].x.clamp(left_x.0, left_x.1) }
-                                    if left_y.0 < left_y.1 { left[id2].y = left[id2].y.clamp(left_y.0, left_y.1) }
-                                    if right_x.0 < right_x.1 { right[0].x = right[0].x.clamp(right_x.0, right_x.1) }
-                                    if right_y.0 < right_y.1 { left[0].y = left[0].y.clamp(right_y.0, right_y.1) }
+                                    if left_x.0 < left_x.1 && left_y.0 < left_y.1 {
+                                        left[id2].x -= dx * push;
+                                        left[id2].y -= dy * push;
+                                        left[id2].y = left[id2].y.clamp(left_y.0, left_y.1);
+                                        left[id2].x = left[id2].x.clamp(left_x.0, left_x.1);
+                                    }
+
+                                    if right_x.0 < right_x.1 && right_y.0 < right_y.1 {
+                                        right[0].x += dx * push;
+                                        right[0].y += dy * push;
+                                        right[0].x = right[0].x.clamp(right_x.0, right_x.1);
+                                        right[0].y = right[0].y.clamp(right_y.0, right_y.1);
+                                    }
                                     px += dx * push;
                                     py += dy * push;
                                 }
@@ -239,10 +255,17 @@ impl Simulation {
                 }
 
                 let (bx, by) = self.clamp_particle_to_walls(px, py);
-                if bx.0 <= bx.1 { px = px.clamp(bx.0, bx.1); }
-                if by.0 <= by.1 { py = py.clamp(by.0, by.1); }
-                self.particles[i].x = px;
-                self.particles[i].y = py;
+                let mut bad = false;
+                if bx.0 <= bx.1 { px = px.clamp(bx.0, bx.1); } else { bad = true; }
+                if by.0 <= by.1 { py = py.clamp(by.0, by.1); } else { bad = true; }
+                if !bad {
+                    self.particles[i].x = px;
+                    self.particles[i].y = py;
+                } else {
+                    self.particles[i].x = 0.0;
+                    self.particles[i].y = 0.0;
+                }
+
             }
         }
     }
