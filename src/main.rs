@@ -14,16 +14,16 @@ use winit::{
     window::*
 };
 
-const MAX_GRAVITY: f32 = 200.0;
+const MAX_GRAVITY: f32 = 60.0;
 
 fn main() {
     let config = config::Config {
-        width: 20,
-        height: 20,
+        width: 80,
+        height: 80,
         spacing: 1.0,
         density: 1000.0,
-        particle_radius: 0.3,
-        max_particles: 400,
+        particle_radius: 0.35,
+        max_particles: 1600,
     };
 
     let runtime_config = config::RuntimeConfig {
@@ -43,6 +43,7 @@ fn main() {
 
         draw_grid: true,
         draw_particles: true,
+        mono_mode: true,
     };
 
     let mut sim = Simulation::new(&config); 

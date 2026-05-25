@@ -31,4 +31,5 @@ pub struct RuntimeConfig {
 
     pub draw_grid: bool,
     pub draw_particles: bool,
+    pub mono_mode: bool,
 }

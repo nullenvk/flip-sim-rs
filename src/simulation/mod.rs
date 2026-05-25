@@ -381,13 +381,24 @@ impl Simulation {
                 let dir_y = best_target_y - y;
                 let dist = dir_x.hypot(dir_y);
                 if dist > 1e-8 {
-                    // Maksymalna odległość, na jaką możemy bezpiecznie przesunąć cząstkę:
-                    // do granicy "solid" – czyli do punktu, gdzie środek cząstki jest tuż przy krawędzi komórki.
-                    // Dla uproszczenia przesuwamy o całą odległość, ale z ograniczeniem do h*0.5.
-                    let move_dist = dist.min(h * 0.5);
-                    x += (dir_x / dist) * move_dist;
-                    y += (dir_y / dist) * move_dist;
+                let nx = dir_x / dist;
+                let ny = dir_y / dist;
+                // Oblicz składową normalną prędkości (dodatnia – w kierunku płynu)
+                let vn = self.particles[i].vx * nx + self.particles[i].vy * ny;
+                // Jeśli cząstka porusza się w stronę ściany (vn < 0), usuń tę składową
+                if vn < 0.0 {
+                    self.particles[i].vx -= vn * nx;
+                    self.particles[i].vy -= vn * ny;
                 }
+                // Przesuń cząstkę do granicy (max half cell)
+                let move_dist = dist.min(h * 0.5);
+                x += nx * move_dist;
+                y += ny * move_dist;
+            } else {
+                // Bezpiecznik – nie powinno się zdarzyć
+                self.particles[i].vx = 0.0;
+                self.particles[i].vy = 0.0;
+            }
 
                 // Po wypchnięciu zerujemy prędkość (lub możesz tylko stłumić)
                 self.particles[i].vx = 0.0;
@@ -719,25 +730,24 @@ impl Simulation {
         }
     }
 
-    pub fn update_cell_colors(&mut self) {
-
-        for i in 0..self.f_num_cells {
-            if self.grid[i].cell_type == CellTypes::Solid {
-                self.grid[i].color = (0.5, 0.5, 0.5);
-            }
-            else if self.grid[i].cell_type == CellTypes::Liquid {
+    pub fn update_cell_colors(&mut self, mono_mode: bool) {
+    for i in 0..self.f_num_cells {
+        if self.grid[i].cell_type == CellTypes::Solid {
+            self.grid[i].color = (0.5, 0.5, 0.5);
+        } else if self.grid[i].cell_type == CellTypes::Liquid {
+            if mono_mode {
+                // Stały kolor płynu, np. niebieski
+                self.grid[i].color = (1.0, 0.4, 1.0);
+            } else {
                 let mut d = self.grid[i].particle_density;
                 if self.particle_rest_density > 0.0 {
                     d /= self.particle_rest_density;
                 }
-
                 let mut val = d.clamp(0.0, 1.99);
                 val /= 2.0;
-
                 let m = 0.25;
                 let num = (val / m).floor() as i32;
                 let s = (val - num as f32 * m) / m;
-                
                 self.grid[i].color = match num {
                     0 => (0.0, s, 1.0),
                     1 => (0.0, 1.0, 1.0 - s),
@@ -745,12 +755,13 @@ impl Simulation {
                     3 => (1.0, 1.0 - s, 0.0),
                     _ => (0.0, 0.0, 0.0),
                 };
-            } else {
-                self.grid[i].color = (0.0, 0.0, 0.0); // clear if gas
             }
+        } else {
+            self.grid[i].color = (0.0, 0.0, 0.0); // Gas – czarne
         }
-
     }
+}
+
 
     pub fn simulate(&mut self, runtime: &RuntimeConfig) {
         self.integrate_particles(runtime.dt, runtime.gravity);
@@ -776,6 +787,6 @@ impl Simulation {
         );
         self.transfer_velocities(false, runtime.flip_ratio);
         
-        self.update_cell_colors();
+        self.update_cell_colors(runtime.mono_mode);
     }
 }
