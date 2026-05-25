@@ -59,34 +59,72 @@ impl Simulation {
         let mut particles = vec![Particle::default(); config.max_particles];
 
         // spwaning
-        let mut num_particles = 0;
+        // let mut num_particles = 0;
+        // let r = config.particle_radius;
+        // let dx = 2.0 * r;
+        // let dy = f32::sqrt(3.0) / 2.0 * dx;
+        
+        // let mut p_idx = 0;
+        // let particles_per_row = 50; // Adjust to make the fluid block wider or narrower
+        // let spawn_height = config.max_particles / particles_per_row + 1 + 200;
+
+
+        // 'spawn: for j in (config.height as i32/2)..spawn_height as i32 {
+        //     for i in 0..particles_per_row {
+        //         if p_idx >= config.max_particles {
+        //             break 'spawn;
+        //         }
+                
+        //         let jitter = if p_idx % 2 == 0 { 1e-4 } else { -1e-4 };
+
+        //         particles[p_idx].x = h + r + dx * i as f32 + if j % 2 == 0 { 0.0 } else { r } + jitter;
+        //         particles[p_idx].y = h + r + dy * j as f32;
+        //         particles[p_idx].color = (0.0, 0.5, 1.0); 
+                
+        //         p_idx += 1;
+        //         num_particles += 1;
+        //     }
+        // }
+
         let r = config.particle_radius;
+        let h = f32::max(config.width as f32 / f_num_x as f32, config.height as f32 / f_num_y as f32);
         let dx = 2.0 * r;
-        let dy = f32::sqrt(3.0) / 2.0 * dx;
+        let dy = (3.0_f32).sqrt() / 2.0 * dx;
+        
+        let blob_width_ratio = 0.4;
+        let blob_height_ratio = 0.3;
+        
+        let max_x = ((blob_width_ratio * config.width as f32 - 2.0 * h - 2.0 * r) / dx).floor() as i32;
+        let max_y = ((blob_height_ratio * config.height as f32 - 2.0 * h - 2.0 * r) / dy).floor() as i32;
+        
+        let num_particles_to_spawn = (max_x as usize * max_y as usize).min(config.max_particles);
+        let num_y = (num_particles_to_spawn as f32 / max_x as f32).ceil() as usize;
+        let num_x = max_x as usize;
+        
+        let start_x = (config.width as f32 - (num_x as f32 * dx)) / 2.0;
+        let start_y = (config.height as f32 - (num_y as f32 * dy)) / 2.0;
         
         let mut p_idx = 0;
-        let particles_per_row = 50; // Adjust to make the fluid block wider or narrower
-        let spawn_height = config.max_particles / particles_per_row + 1 + 200;
-
-
-        'spawn: for j in (config.height as i32/2)..spawn_height as i32 {
-            for i in 0..particles_per_row {
+        let mut num_particles = 0;
+        
+        'spawn: for j in 0..num_y {
+            for i in 0..num_x {
                 if p_idx >= config.max_particles {
                     break 'spawn;
                 }
-                
+            
                 let jitter = if p_idx % 2 == 0 { 1e-4 } else { -1e-4 };
-
-                particles[p_idx].x = h + r + dx * i as f32 + if j % 2 == 0 { 0.0 } else { r } + jitter;
-                particles[p_idx].y = h + r + dy * j as f32;
-                particles[p_idx].color = (0.0, 0.5, 1.0); 
-                
+            
+                particles[p_idx].x = start_x + r + dx * i as f32 + if j % 2 == 0 { 0.0 } else { r } + jitter;
+                particles[p_idx].y = start_y + r + dy * j as f32;
+                particles[p_idx].color = (0.0, 0.5, 1.0);
+            
                 p_idx += 1;
                 num_particles += 1;
             }
         }
-
-
+    
+    
         Simulation {
             config: config.clone(),
             grid,
@@ -271,56 +309,107 @@ impl Simulation {
     }
 
     pub fn handle_particle_collisions(&mut self, obstacle_x: f32, obstacle_y: f32, obstacle_radius: f32, obstacle_vel_x: f32, obstacle_vel_y: f32) {
-        let h = 1.0 / self.f_inv_spacing;
-        let r = self.config.particle_radius;
-        let min_dist = obstacle_radius + r;
-        let min_dist2 = min_dist * min_dist;
+        // Parametry okrągłego zbiornika – muszą być zgodne z tymi w main.rs
+        let cx = (self.f_num_x as f32 - 1.0) * self.h * 0.5;
+        let cy = (self.f_num_y as f32 - 1.0) * self.h * 0.5;
+        let radius = (self.f_num_x.min(self.f_num_y) as f32 * self.h) * 0.45;
+        let inner_radius = radius - self.config.particle_radius;   // max odległość środka cząstki od centrum
 
-        let min_x = h + r;
-        let max_x = (self.f_num_x as f32 - 1.0) * h - r;
-        let min_y = h + r;
-        let max_y = (self.f_num_y as f32 - 1.0) * h - r;
+        // Przeszkoda (jeśli nieużywana, obstacle_radius=0)
+        let min_dist_obstacle = obstacle_radius + self.config.particle_radius;
+        let min_dist2_obstacle = min_dist_obstacle * min_dist_obstacle;
 
         for i in 0..self.num_particles {
             let mut x = self.particles[i].x;
             let mut y = self.particles[i].y;
 
-            let dx = x - obstacle_x;
-            let dy = y - obstacle_y;
-            let d2 = dx * dx + dy * dy;
-
-            if d2 < min_dist2 {
-
-                let d = d2.sqrt().max(1e-8); // unikaj dzielenia przez 0
-                let penetration = min_dist - d;
-                x += (dx / d) * penetration;
-                y += (dy / d) * penetration;
-
-                self.particles[i].vx = obstacle_vel_x;
-                self.particles[i].vy = obstacle_vel_y;
+            // Kolizja z przeszkodą (jeśli obstacle_radius > 0)
+            if obstacle_radius > 0.0 {
+                let dx_obs = x - obstacle_x;
+                let dy_obs = y - obstacle_y;
+                let d2 = dx_obs * dx_obs + dy_obs * dy_obs;
+                if d2 < min_dist2_obstacle {
+                    let d = d2.sqrt().max(1e-8);
+                    let penetration = min_dist_obstacle - d;
+                    x += (dx_obs / d) * penetration;
+                    y += (dy_obs / d) * penetration;
+                    self.particles[i].vx = obstacle_vel_x;
+                    self.particles[i].vy = obstacle_vel_y;
+                }
             }
 
-            if x < min_x {
-                x = min_x;
+            // Kolizja z okrągłą ścianą
+            let dx = x - cx;
+            let dy = y - cy;
+            let dist = dx.hypot(dy);
+            if dist > inner_radius {
+                // Wypchnij cząstkę do środka
+                let nx = dx / dist;
+                let ny = dy / dist;
+                x = cx + nx * inner_radius;
+                y = cy + ny * inner_radius;
+                // Zatrzymaj prędkość (możesz też tylko stłumić, ale zerowanie działa stabilniej)
                 self.particles[i].vx = 0.0;
-            }
-            if x > max_x {
-                x = max_x;
-                self.particles[i].vx = 0.0;
-            }
-            if y < min_y {
-                y = min_y;
                 self.particles[i].vy = 0.0;
             }
-            if y > max_y {
-                y = max_y;
-                self.particles[i].vy = 0.0;
-            }
 
+            // Aktualizacja pozycji
             self.particles[i].x = x;
             self.particles[i].y = y;
         }
     }
+
+    // pub fn handle_particle_collisions(&mut self, obstacle_x: f32, obstacle_y: f32, obstacle_radius: f32, obstacle_vel_x: f32, obstacle_vel_y: f32) {
+    //     let h = 1.0 / self.f_inv_spacing;
+    //     let r = self.config.particle_radius;
+    //     let min_dist = obstacle_radius + r;
+    //     let min_dist2 = min_dist * min_dist;
+
+    //     let min_x = h + r;
+    //     let max_x = (self.f_num_x as f32 - 1.0) * h - r;
+    //     let min_y = h + r;
+    //     let max_y = (self.f_num_y as f32 - 1.0) * h - r;
+
+    //     for i in 0..self.num_particles {
+    //         let mut x = self.particles[i].x;
+    //         let mut y = self.particles[i].y;
+
+    //         let dx = x - obstacle_x;
+    //         let dy = y - obstacle_y;
+    //         let d2 = dx * dx + dy * dy;
+
+    //         if d2 < min_dist2 {
+
+    //             let d = d2.sqrt().max(1e-8); // unikaj dzielenia przez 0
+    //             let penetration = min_dist - d;
+    //             x += (dx / d) * penetration;
+    //             y += (dy / d) * penetration;
+
+    //             self.particles[i].vx = obstacle_vel_x;
+    //             self.particles[i].vy = obstacle_vel_y;
+    //         }
+
+    //         if x < min_x {
+    //             x = min_x;
+    //             self.particles[i].vx = 0.0;
+    //         }
+    //         if x > max_x {
+    //             x = max_x;
+    //             self.particles[i].vx = 0.0;
+    //         }
+    //         if y < min_y {
+    //             y = min_y;
+    //             self.particles[i].vy = 0.0;
+    //         }
+    //         if y > max_y {
+    //             y = max_y;
+    //             self.particles[i].vy = 0.0;
+    //         }
+
+    //         self.particles[i].x = x;
+    //         self.particles[i].y = y;
+    //     }
+    // }
 
     pub fn transfer_velocities(&mut self, to_grid: bool, flip_ratio: f32) {
         let n = self.f_num_y;
@@ -397,11 +486,21 @@ impl Simulation {
                     }
                 } else {
                     let offset = if component == 0 { n } else { 1 };
+
+                    let valid0 = if self.grid[nr0].cell_type != CellTypes::Gas 
+                        || (nr0 >= offset && self.grid[nr0 - offset].cell_type != CellTypes::Gas) { 1.0 } else { 0.0 };
+                    let valid1 = if self.grid[nr1].cell_type != CellTypes::Gas 
+                        || (nr1 >= offset && self.grid[nr1 - offset].cell_type != CellTypes::Gas) { 1.0 } else { 0.0 };
+                    let valid2 = if self.grid[nr2].cell_type != CellTypes::Gas 
+                        || (nr2 >= offset && self.grid[nr2 - offset].cell_type != CellTypes::Gas) { 1.0 } else { 0.0 };
+                    let valid3 = if self.grid[nr3].cell_type != CellTypes::Gas 
+                        || (nr3 >= offset && self.grid[nr3 - offset].cell_type != CellTypes::Gas) { 1.0 } else { 0.0 };
+                    // let offset = if component == 0 { n } else { 1 };
                     
-                    let valid0 = if self.grid[nr0].cell_type != CellTypes::Gas || self.grid[nr0.saturating_sub(offset)].cell_type != CellTypes::Gas { 1.0 } else { 0.0 };
-                    let valid1 = if self.grid[nr1].cell_type != CellTypes::Gas || self.grid[nr1.saturating_sub(offset)].cell_type != CellTypes::Gas { 1.0 } else { 0.0 };
-                    let valid2 = if self.grid[nr2].cell_type != CellTypes::Gas || self.grid[nr2.saturating_sub(offset)].cell_type != CellTypes::Gas { 1.0 } else { 0.0 };
-                    let valid3 = if self.grid[nr3].cell_type != CellTypes::Gas || self.grid[nr3.saturating_sub(offset)].cell_type != CellTypes::Gas { 1.0 } else { 0.0 };
+                    // let valid0 = if self.grid[nr0].cell_type != CellTypes::Gas || self.grid[nr0.saturating_sub(offset)].cell_type != CellTypes::Gas { 1.0 } else { 0.0 };
+                    // let valid1 = if self.grid[nr1].cell_type != CellTypes::Gas || self.grid[nr1.saturating_sub(offset)].cell_type != CellTypes::Gas { 1.0 } else { 0.0 };
+                    // let valid2 = if self.grid[nr2].cell_type != CellTypes::Gas || self.grid[nr2.saturating_sub(offset)].cell_type != CellTypes::Gas { 1.0 } else { 0.0 };
+                    // let valid3 = if self.grid[nr3].cell_type != CellTypes::Gas || self.grid[nr3.saturating_sub(offset)].cell_type != CellTypes::Gas { 1.0 } else { 0.0 };
 
                     let v = if component == 0 { p.vx } else { p.vy };
                     let d = valid0 * d0 + valid1 * d1 + valid2 * d2 + valid3 * d3;
