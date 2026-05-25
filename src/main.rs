@@ -18,12 +18,12 @@ const MAX_GRAVITY: f32 = 200.0;
 
 fn main() {
     let config = config::Config {
-        width: 100,
-        height: 100,
+        width: 20,
+        height: 20,
         spacing: 1.0,
         density: 1000.0,
         particle_radius: 0.3,
-        max_particles: 5000,
+        max_particles: 400,
     };
 
     let runtime_config = config::RuntimeConfig {
