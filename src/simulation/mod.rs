@@ -116,15 +116,24 @@ impl Simulation {
         &self.grid[x * self.f_num_y + y]
     }
 
-    pub fn integrate_particles(&mut self, dt:f32,gravity: (f32,f32)) {
-        let (gx,gy) = gravity;
+    pub fn integrate_particles(&mut self, dt: f32, gravity: (f32, f32)) {
+        let (gx, gy) = gravity;
         // we need take() because num_particles != max_particles
-        for part in self.particles.iter_mut().take(self.num_particles) {
+        let mut particles = std::mem::take(&mut self.particles);
+        for part in particles.iter_mut().take(self.num_particles) {
             part.vx += dt * gx;
             part.vy += dt * gy;
+            let (bx, by) = self.clamp_particle_to_walls(part.x, part.y);
+            let nx = part.x + part.vx * dt;
+            let ny = part.y + part.vy * dt;
+            if nx < bx.0 || nx > bx.1 { part.vx = 0.0; }
+            if ny < by.0 || ny > by.1 { part.vy = 0.0; }
             part.x += part.vx * dt;
             part.y += part.vy * dt;
+            if bx.0 <= bx.1 { part.x = part.x.clamp(bx.0, bx.1); }
+            if by.0 <= by.1 { part.y = part.y.clamp(by.0, by.1); }
         }
+        self.particles = particles;
     }
 
     // todo: jakoś to zrefactorować
@@ -194,19 +203,33 @@ impl Simulation {
                             
                                 // rozsuń obie cząstki
                                 if i < id2 {
+                                    let (left_x, left_y) = self.clamp_particle_to_walls(self.particles[i].x, self.particles[i].y);
+                                    let (right_x, right_y) = self.clamp_particle_to_walls(self.particles[id2].x, self.particles[id2].y);
                                     let (left, right) = self.particles.split_at_mut(id2);
                                     left[i].x += dx * push;
                                     left[i].y += dy * push;
                                     right[0].x -= dx * push;
                                     right[0].y -= dy * push;
+
+                                    if left_x.0 < left_x.1 { left[i].x = left[i].x.clamp(left_x.0, left_x.1) }
+                                    if left_y.0 < left_y.1 { left[i].y = left[i].y.clamp(left_y.0, left_y.1) }
+                                    if right_x.0 < right_x.1 { right[0].x = right[0].x.clamp(right_x.0, right_x.1) }
+                                    if right_y.0 < right_y.1 { left[0].y = left[0].y.clamp(right_y.0, right_y.1) }
                                     px += dx * push;
                                     py += dy * push;
                                 } else {
+                                    let (left_x, left_y) = self.clamp_particle_to_walls(self.particles[id2].x, self.particles[id2].y);
+                                    let (right_x, right_y) = self.clamp_particle_to_walls(self.particles[i].x, self.particles[i].y);
                                     let (left, right) = self.particles.split_at_mut(i);
                                     right[0].x += dx * push;
                                     right[0].y += dy * push;
                                     left[id2].x -= dx * push;
                                     left[id2].y -= dy * push;
+
+                                    if left_x.0 < left_x.1 { left[id2].x = left[id2].x.clamp(left_x.0, left_x.1) }
+                                    if left_y.0 < left_y.1 { left[id2].y = left[id2].y.clamp(left_y.0, left_y.1) }
+                                    if right_x.0 < right_x.1 { right[0].x = right[0].x.clamp(right_x.0, right_x.1) }
+                                    if right_y.0 < right_y.1 { left[0].y = left[0].y.clamp(right_y.0, right_y.1) }
                                     px += dx * push;
                                     py += dy * push;
                                 }
@@ -214,11 +237,50 @@ impl Simulation {
                         }
                     }
                 }
-                
+
+                let (bx, by) = self.clamp_particle_to_walls(px, py);
+                if bx.0 <= bx.1 { px = px.clamp(bx.0, bx.1); }
+                if by.0 <= by.1 { py = py.clamp(by.0, by.1); }
                 self.particles[i].x = px;
                 self.particles[i].y = py;
             }
         }
+    }
+
+    fn clamp_particle_to_walls(&self, px: f32, py: f32) -> ((f32, f32), (f32, f32)) {
+        let r = self.config.particle_radius;
+        let xi = ((px * self.f_inv_spacing).floor() as i32).clamp(0, self.f_num_x as i32 - 1) as usize;
+        let yi = ((py * self.f_inv_spacing).floor() as i32).clamp(0, self.f_num_y as i32 - 1) as usize;
+
+        let mut min_y = yi;
+        while min_y > 0 && self.grid[xi * self.f_num_y + min_y].cell_type != CellTypes::Solid {
+            min_y -= 1;
+        }
+        let mut max_y = yi;
+        while max_y < self.f_num_y - 1 && self.grid[xi * self.f_num_y + max_y].cell_type != CellTypes::Solid {
+            max_y += 1;
+        }
+        let mut min_x = xi;
+        while min_x > 0 && self.grid[min_x * self.f_num_y + yi].cell_type != CellTypes::Solid {
+            min_x -= 1;
+        }
+        let mut max_x = xi;
+        while max_x < self.f_num_x - 1 && self.grid[max_x * self.f_num_y + yi].cell_type != CellTypes::Solid {
+            max_x += 1;
+        }
+
+        let solid_min_x = self.grid[min_x * self.f_num_y + yi].cell_type == CellTypes::Solid;
+        let solid_max_x = self.grid[max_x * self.f_num_y + yi].cell_type == CellTypes::Solid;
+        let solid_min_y = self.grid[xi * self.f_num_y + min_y].cell_type == CellTypes::Solid;
+        let solid_max_y = self.grid[xi * self.f_num_y + max_y].cell_type == CellTypes::Solid;
+
+        let min_xf = (if solid_min_x { min_x + 1 } else { min_x }) as f32 * self.h + r;
+        let max_xf = (if solid_max_x { max_x } else { max_x - 1 }) as f32 * self.h - r;
+        let min_yf = (if solid_min_y { min_y + 1 } else { min_y }) as f32 * self.h + r;
+        let max_yf = (if solid_max_y { max_y } else { max_y - 1 }) as f32 * self.h - r;
+
+
+        ((min_xf, max_xf), (min_yf, max_yf))
     }
 
     pub fn update_particle_density(&mut self){
@@ -270,58 +332,6 @@ impl Simulation {
 
     }
 
-    pub fn handle_particle_collisions(&mut self, obstacle_x: f32, obstacle_y: f32, obstacle_radius: f32, obstacle_vel_x: f32, obstacle_vel_y: f32) {
-        let h = 1.0 / self.f_inv_spacing;
-        let r = self.config.particle_radius;
-        let min_dist = obstacle_radius + r;
-        let min_dist2 = min_dist * min_dist;
-
-        let min_x = h + r;
-        let max_x = (self.f_num_x as f32 - 1.0) * h - r;
-        let min_y = h + r;
-        let max_y = (self.f_num_y as f32 - 1.0) * h - r;
-
-        for i in 0..self.num_particles {
-            let mut x = self.particles[i].x;
-            let mut y = self.particles[i].y;
-
-            let dx = x - obstacle_x;
-            let dy = y - obstacle_y;
-            let d2 = dx * dx + dy * dy;
-
-            if d2 < min_dist2 {
-
-                let d = d2.sqrt().max(1e-8); // unikaj dzielenia przez 0
-                let penetration = min_dist - d;
-                x += (dx / d) * penetration;
-                y += (dy / d) * penetration;
-
-                self.particles[i].vx = obstacle_vel_x;
-                self.particles[i].vy = obstacle_vel_y;
-            }
-
-            if x < min_x {
-                x = min_x;
-                self.particles[i].vx = 0.0;
-            }
-            if x > max_x {
-                x = max_x;
-                self.particles[i].vx = 0.0;
-            }
-            if y < min_y {
-                y = min_y;
-                self.particles[i].vy = 0.0;
-            }
-            if y > max_y {
-                y = max_y;
-                self.particles[i].vy = 0.0;
-            }
-
-            self.particles[i].x = x;
-            self.particles[i].y = y;
-        }
-    }
-
     pub fn transfer_velocities(&mut self, to_grid: bool, flip_ratio: f32) {
         let n = self.f_num_y;
         let h = self.h;
@@ -357,10 +367,15 @@ impl Simulation {
 
             for i in 0..self.num_particles {
                 let p = &self.particles[i];
-                let max_bound_x = f32::max(h, (self.f_num_x as f32 - 1.0) * h);
-                let max_bound_y = f32::max(h, (self.f_num_y as f32 - 1.0) * h);
-                let x = p.x.clamp(h, max_bound_x);
-                let y = p.y.clamp(h, max_bound_y);
+                let (bx, by) = self.clamp_particle_to_walls(p.x, p.y);
+                let mut x = p.x;
+                let mut y = p.y;
+                if bx.0 < bx.1 {
+                    x = x.clamp(bx.0, bx.1);
+                }
+                if by.0 < by.1 {
+                    y = y.clamp(by.0, by.1);
+                }
 
                 let x0 = (((x - dx) * h1).floor() as usize).min(self.f_num_x.saturating_sub(2));
                 let tx = ((x - dx) - x0 as f32 * h) * h1;
@@ -492,8 +507,6 @@ impl Simulation {
                     let sy0 = self.grid[bottom].s;
                     let sy1 = self.grid[top].s;
                     let s = sx0 + sx1 + sy0 + sy1;
-                    
-                    if s < 0.1 { continue; }
 
                     let mut div = self.grid[right].u - self.grid[center].u + self.grid[top].v - self.grid[center].v;
 
@@ -513,15 +526,8 @@ impl Simulation {
                     self.grid[right].u  += sx1 * p;
                     self.grid[center].v -= sy0 * p;
                     self.grid[top].v    += sy1 * p;
-                    
-                    // self.read_grid[center].p += cp * p;
-                    // self.read_grid[center].u -= sx0 * p;
-                    // self.read_grid[right].u  += sx1 * p;
-                    // self.read_grid[center].v -= sy0 * p;
-                    // self.read_grid[top].v    += sy1 * p;
                 }
             }
-            // std::mem::swap(&mut self.read_grid, &mut self.read_grid); borrow checker fix unfix
         }
     }
 
@@ -564,13 +570,6 @@ impl Simulation {
         if runtime.separate_particles {
             self.push_particles_apart(runtime.num_particle_iters);
         }
-        self.handle_particle_collisions(
-            runtime.obstacle_x, 
-            runtime.obstacle_y, 
-            runtime.obstacle_radius, 
-            runtime.obstacle_vel_x, 
-            runtime.obstacle_vel_y
-        );
         
         self.transfer_velocities(true, runtime.flip_ratio);
         self.update_particle_density();

@@ -22,7 +22,7 @@ fn main() {
         spacing: 1.0,
         density: 1000.0,
         particle_radius: 0.3,
-        max_particles: 10000,
+        max_particles: 2000,
     };
 
     let runtime_config = config::RuntimeConfig {
@@ -49,15 +49,18 @@ fn main() {
             // tank boundaries
          for x in 0..sim.f_num_x {
             for y in 0..sim.f_num_y {
-                let mut s = 1.0; 
-
-                if x == 0 || x == sim.f_num_x - 1 || y == 0 {   
-                    s = 0.0;
-                }
-                
                 let cell_nr = x * sim.f_num_y + y;
-                sim.grid[cell_nr].s = s;
-                if s == 0.0 {
+                sim.grid[cell_nr].s = 1.0;
+                sim.grid[cell_nr].cell_type = cell::CellTypes::Gas;
+
+                let e = 1.0;
+                let r = 20.0;
+
+                let dx = x as f32 - (sim.f_num_x as f32 / 2.0);
+                let dy = y as f32 - (sim.f_num_y as f32 / 2.0);
+                let dist = (dx * dx + dy * dy).sqrt();
+                if (r - e..r + e).contains(&dist) {
+                    sim.grid[cell_nr].s = 0.0;
                     sim.grid[cell_nr].cell_type = cell::CellTypes::Solid;
                 }
             }
