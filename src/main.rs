@@ -1,174 +1,112 @@
-use flip_sim_rs::simulation::config::RuntimeConfig;
-use flip_sim_rs::simulation::*;
-use flip_sim_rs::front_wgpu::*;
+#![no_std]
+#![no_main]
 
-use std::sync::Arc;
-use std::time::Instant;
+use defmt::*;
+use embassy_executor::Spawner;
+use embassy_stm32::{Config, i2c::{self, Master}, mode::Blocking, rcc::{Pll, PllRDiv::DIV2, PllSource}, time::Hertz};
+use {defmt_rtt as _, panic_probe as _};
+use embassy_stm32::i2c::I2c;
 
-use winit::{
-    application::ApplicationHandler, 
-    event::*, 
-    event_loop::*,
-    keyboard::{KeyCode, PhysicalKey}, 
-    window::*
-};
+const SET_COL_ADDR: u8 =  0x15;
+const SET_SCROLL_DEACTIVATE: u8 =  0x2E;
+const SET_ROW_ADDR: u8 =  0x75;
+const SET_CONTRAST: u8 =  0x81;
+const SET_SEG_REMAP: u8 =  0xA0;
+const SET_DISP_START_LINE: u8 =  0xA1;
+const SET_DISP_OFFSET: u8 =  0xA2;
+const SET_DISP_MODE: u8 =  0xA4;
+const SET_MUX_RATIO: u8 =  0xA8;
+const SET_FN_SELECT_A: u8 =  0xAB;
+const SET_DISP: u8 =  0xAE;
+const SET_PHASE_LEN: u8 =  0xB1;
+const SET_DISP_CLK_DIV: u8 =  0xB3;
+const SET_SECOND_PRECHARGE: u8 =  0xB6;
+const SET_GRAYSCALE_TABLE: u8 =  0xB8;
+const SET_GRAYSCALE_LINEAR: u8 =  0xB9;
+const SET_PRECHARGE: u8 =  0xBC;
+const SET_VCOM_DESEL: u8 =  0xBE;
+const SET_FN_SELECT_B: u8 =  0xD5;
+const SET_COMMAND_LOCK: u8 =  0xFD;
 
-const MAX_GRAVITY: f32 = 200.0;
+const OLED: u8 = 0x78u8 >> 1;
+type I2cRef<'a, 'b> = &'a mut I2c<'b, Blocking, Master>;
 
-fn main() {
-    let config = config::Config {
-        width: 160,
-        height: 90,
-        spacing: 1.0,
-        density: 1000.0,
-        particle_radius: 0.3,
-        max_particles: 2000,
-    };
+const CO_CMD: u8 =    0b0000_0000;
+const CO_DATA: u8 =   0b0100_0000;
+const CO_CONT: u8 =   0b0000_0000;
+const CO_SINGLE: u8 = 0b1000_0000;
 
-    let runtime_config = config::RuntimeConfig {
-        dt: 1.0 / 60.0,
-        gravity: (0.0, -100.0),
-        flip_ratio: 0.9,
-        num_pressure_iters: 100,
-        num_particle_iters: 2,
-        over_relaxation: 1.9,
-        compensate_drift: true,
-        separate_particles: true,
-        obstacle_x: 0.0,
-        obstacle_y: 0.0,
-        obstacle_radius: 0.0,
-        obstacle_vel_x: 0.0,
-        obstacle_vel_y: 0.0,
+fn send_init(i2c: I2cRef) {
+    i2c.blocking_write(OLED, &[
+        CO_CMD | CO_CONT,
 
-        draw_grid: true,
-        draw_particles: false,
-    };
-
-    let mut sim = Simulation::new(&config); 
-
-            // tank boundaries
-         for x in 0..sim.f_num_x {
-            for y in 0..sim.f_num_y {
-                let cell_nr = x * sim.f_num_y + y;
-                sim.grid[cell_nr].s = 1.0;
-                sim.grid[cell_nr].cell_type = cell::CellTypes::Gas;
-
-                let e = 1.0;
-                let r = 20.0;
-
-                let dx = x as f32 - (sim.f_num_x as f32 / 2.0);
-                let dy = y as f32 - (sim.f_num_y as f32 / 2.0);
-                let dist = (dx * dx + dy * dy).sqrt();
-                if (r - e..r + e).contains(&dist) {
-                    sim.grid[cell_nr].s = 0.0;
-                    sim.grid[cell_nr].cell_type = cell::CellTypes::Solid;
-                }
-            }
-        }
-
-    let event_loop = EventLoop::new().unwrap();
-    event_loop.set_control_flow(ControlFlow::Poll);
-
-    let mut app = App::new(sim, runtime_config);
-
-    event_loop.run_app(&mut app).unwrap();
+        SET_COMMAND_LOCK, 0x12, // Unlock
+        SET_DISP, // Display off
+        SET_DISP_START_LINE, 0, //0x20,
+        SET_DISP_OFFSET, 0, // Set vertical offset by COM from 0~127
+        SET_SEG_REMAP, 0b01010011,
+        SET_MUX_RATIO, 127,
+        SET_FN_SELECT_A, 0x00, // Enable internal VDD regulator
+        SET_PHASE_LEN, 0x51, // Phase 1: 1 DCLK, Phase 2: 5 DCLKs
+        SET_DISP_CLK_DIV, 0x01, // Divide ratio: 1, Oscillator Frequency: 0
+        SET_PRECHARGE, 0x08, // Set pre-charge voltage level: VCOMH
+        SET_VCOM_DESEL, 0x07, // Set VCOMH COM deselect voltage level: 0.86*Vcc
+        SET_SECOND_PRECHARGE, 0x01, // Second Pre-charge period: 1 DCLK
+        SET_FN_SELECT_B, 0x62, // Enable enternal VSL, Enable second precharge
+        // Display
+        SET_GRAYSCALE_LINEAR, // Use linear greyscale lookup table
+        SET_CONTRAST, 0x7f, // Medium brightness
+        SET_DISP_MODE, // Normal, inverted
+        SET_SCROLL_DEACTIVATE,
+        SET_DISP | 1,
+    ]).unwrap();
 }
 
-struct App {
-    window: Option<Arc<Window>>,
-    front: Option<FrontWgpu>,
-    sim: Option<Simulation>,
-    runtime_config: config::RuntimeConfig,
-
-    last_frame: Instant,
-    frame_acc: f32,
+fn set_ranges(i2c: I2cRef, start_x: u8, start_y: u8, end_x: u8, end_y: u8) {
+    i2c.blocking_write(OLED, &[
+        CO_CMD | CO_CONT,
+        SET_COL_ADDR, start_x / 2, end_x / 2 - 1,
+        SET_ROW_ADDR, start_y, end_y - 1,
+    ]).unwrap();
 }
 
-
-impl App {
-    pub fn new(sim: Simulation, runtime_config: RuntimeConfig) -> Self {
-        Self {
-            window: None,
-            front: None,
-            sim: Some(sim),
-            runtime_config,
-            last_frame: Instant::now(),
-            frame_acc: 0.0
+fn clear_screen(i2c: I2cRef) {
+    let mut data_packet = [0u8; 17];
+    data_packet[0] = CO_DATA | CO_CONT;
+    set_ranges(i2c, 0, 0, 128, 128);
+    for _ in 0..128 {
+        for _ in 0..((96 / 16) / 2) {
+            i2c.blocking_write(OLED, &data_packet).unwrap();
         }
     }
 }
-impl ApplicationHandler for App {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        if self.window.is_some() {
-            return; 
-        }
- 
-        let window = Arc::new(
-            event_loop
-                .create_window(
-                    WindowAttributes::default()
-                        .with_title("flip-sim-rs")
-                        .with_inner_size(winit::dpi::LogicalSize::new(800, 800)),
-                )
-                .unwrap(),
-        );
- 
-        let sim = self.sim.take().unwrap();
-        let front = pollster::block_on(FrontWgpu::new(Arc::clone(&window), sim, self.runtime_config.clone()));
- 
-        self.last_frame = Instant::now();
-        self.window = Some(window);
-        self.front = Some(front);
-    }
- 
-    fn window_event(&mut self, event_loop: &ActiveEventLoop, _window_id: winit::window::WindowId, event: WindowEvent) {
-        let Some(front) = self.front.as_mut() else { return };
- 
-        match event {
-            WindowEvent::CloseRequested => { event_loop.exit(); }
-            WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        physical_key: PhysicalKey::Code(key),
-                        state: ElementState::Pressed,
-                        ..
-                    },
-                ..
-            } => match key {
-                KeyCode::Escape => event_loop.exit(),
-                _ => {}
-            },
-            WindowEvent::CursorMoved { device_id: _, position } => {
-                let window_size = front.get_window_size();
-                front.runtime_config.gravity = (
-                    ((position.x as f32 - (window_size.width as f32 / 2.0)) / (window_size.width as f32 / 2.0)) * MAX_GRAVITY,
-                    -((position.y as f32 - (window_size.width as f32 / 2.0)) / (window_size.width as f32 / 2.0)) * MAX_GRAVITY,
-                );
-            }
- 
-            WindowEvent::Resized(new_size) => {
-                front.resize(new_size);
-            }
- 
-            WindowEvent::RedrawRequested => {
-                let now = Instant::now();
-                let elapsed = (now - self.last_frame).as_secs_f32().min(0.25);
-                self.last_frame = now;
 
-                self.frame_acc += elapsed;
-                let dt = front.runtime_config.dt;
-                while self.frame_acc >= dt {
-                    front.sim.simulate(&front.runtime_config);
-                    self.frame_acc -= dt;
-                }
-
-                front.render();
-                self.window.as_ref().unwrap().request_redraw();
-            }
- 
-            _ => {}
-        }
+fn send_data_to_screen(data: &[u8], i2c: I2cRef) {
+    let mut buffer = [0u8; 17];
+    buffer[0] = CO_DATA | CO_CONT;
+    let ld = data.len();
+    for x in (0..ld).step_by(16) {
+        buffer[1..].fill(0);
+        buffer[1..].copy_from_slice(&data[x..(x + 16).min(ld)]);
+        i2c.blocking_write(OLED, &buffer).unwrap();
     }
 }
- 
 
+#[embassy_executor::main]
+async fn main(_spawner: Spawner) {
+    let mut syscfg = Config::default();
+    syscfg.rcc.hsi = true;
+    syscfg.rcc.pll = Some(Pll { source: PllSource::HSI, mul: embassy_stm32::rcc::PllMul::MUL10, prediv: embassy_stm32::rcc::PllPreDiv::DIV1, divr: Some(DIV2), divq: None, divp: None });
+    syscfg.rcc.sys = embassy_stm32::rcc::Sysclk::PLL1_R;
+
+    let p = embassy_stm32::init(syscfg);
+    let mut conf = i2c::Config::default();
+    conf.frequency = Hertz::khz(400);
+    let mut i2c = I2c::new_blocking(p.I2C1, p.PB6, p.PB7, conf);
+    send_init(&mut i2c);
+    clear_screen(&mut i2c);
+
+    let screendata = include_bytes!("/ram/raw");
+    set_ranges(&mut i2c, 0, 0, 96, 96);
+    send_data_to_screen(screendata, &mut i2c);
+}
