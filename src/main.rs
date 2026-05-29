@@ -44,7 +44,7 @@ fn send_init(i2c: I2cRef) {
         SET_DISP, // Display off
         SET_DISP_START_LINE, 0, //0x20,
         SET_DISP_OFFSET, 0, // Set vertical offset by COM from 0~127
-        SET_SEG_REMAP, 0b01010011,
+        SET_SEG_REMAP, 0b01010001,
         SET_MUX_RATIO, 127,
         SET_FN_SELECT_A, 0x00, // Enable internal VDD regulator
         SET_PHASE_LEN, 0x51, // Phase 1: 1 DCLK, Phase 2: 5 DCLKs
@@ -106,7 +106,7 @@ async fn main(_spawner: Spawner) {
     send_init(&mut i2c);
     clear_screen(&mut i2c);
 
-    let screendata = include_bytes!("/ram/raw");
+    let screendata = include_bytes!("raw");
     set_ranges(&mut i2c, 0, 0, 96, 96);
     send_data_to_screen(screendata, &mut i2c);
 }
