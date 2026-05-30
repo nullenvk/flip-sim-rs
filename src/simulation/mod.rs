@@ -6,6 +6,7 @@ use alloc::vec::*;
 use cell::*;
 use config::*;
 use particle::*;
+use num_traits::Float;
 
 #[derive(Debug)]
 pub struct Simulation {
