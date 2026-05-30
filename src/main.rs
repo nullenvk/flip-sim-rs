@@ -12,7 +12,6 @@ pub mod config;
 use embassy_time::Timer;
 use simulation::*;
 use config::*;
-use defmt::*;
 use embassy_executor::Spawner;
 use embassy_stm32::{Config, i2c::{self, Master}, mode::Blocking, rcc::{Pll, PllRDiv::DIV2, PllSource}, time::Hertz};
 use {defmt_rtt as _, panic_probe as _};
@@ -104,13 +103,19 @@ fn send_data_to_screen(data: &[u8], i2c: I2cRef) {
 }
 
 fn send_sim_data_to_screen(sim: &Simulation, i2c: I2cRef) {
+    set_ranges(i2c, 0, 0, sim.config.width as u8, sim.config.height as u8);
+    assert_eq!((sim.config.width) % 32, 0);
     let mut buffer = [0u8; 17];
     buffer[0] = CO_DATA | CO_CONT;
-    let ld = data.len();
-    for x in (0..ld).step_by(16) {
-        buffer[1..].fill(0);
-        buffer[1..].copy_from_slice(&data[x..(x + 16).min(ld)]);
-        i2c.blocking_write(OLED, &buffer).unwrap();
+
+    for row in 0..sim.f_num_y {
+        for col_root in (0..sim.f_num_x).step_by(2) {
+            buffer[(1 + (col_root as u8 % 32) >> 1) as usize] = sim.get_cell(col_root, row).color |
+                                                                sim.get_cell(col_root + 1, row).color;
+            if (col_root % 32) == 30 {
+                i2c.blocking_write(OLED, &buffer).unwrap();
+            }
+        }
     }
 }
 
