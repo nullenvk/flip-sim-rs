@@ -1,16 +1,16 @@
 use crate::simulation::config::*;
 
 pub const CONFIG: Config = Config {
-        width: 80,
-        height: 80,
+        width: 32,
+        height: 32,
         spacing: 1.0,
         density: 100.0,
         particle_radius: 0.25,
-        max_particles: 8000,
+        max_particles: 300,
     };
 
 pub const INITIAL_RUNTIME_CONFIG: RuntimeConfig = RuntimeConfig {
-        dt: 1.0 / 60.0,
+        dt: 1.0 / 30.0,
         gravity: (0.0, -100.0),
         flip_ratio: 0.8,
         num_pressure_iters: 100,
@@ -26,5 +26,4 @@ pub const INITIAL_RUNTIME_CONFIG: RuntimeConfig = RuntimeConfig {
 
         draw_grid: true,
         draw_particles: false,
-        mono_mode: true,
     };

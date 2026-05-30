@@ -4,7 +4,6 @@ pub struct Particle {
     pub y: f32,
     pub vx: f32,
     pub vy: f32,
-    pub color: (f32, f32, f32),
 }
 
 impl Default for Particle {
@@ -14,7 +13,6 @@ impl Default for Particle {
             y: 0.0,
             vx: 0.0,
             vy: 0.0,
-            color: (0.0, 0.0, 1.0), // blue
         }
     }
 }

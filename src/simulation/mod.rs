@@ -28,10 +28,10 @@ pub struct Simulation {
     pub p_num_y: usize,
     pub p_num_cells: usize,
 
-    pub num_cell_particles: Vec<i32>,
-    pub first_cell_particle: Vec<usize>,
-    pub cell_particle_ids: Vec<usize>,
-    pub particle_cell_nrs: Vec<usize>,
+    pub num_cell_particles: Vec<i8>,
+    pub first_cell_particle: Vec<u8>,
+    pub cell_particle_ids: Vec<u8>,
+    pub particle_cell_nrs: Vec<u8>,
 
     pub num_particles: usize,
 }
@@ -122,7 +122,6 @@ impl Simulation {
                 particles[p_idx].x =
                     start_x + r + dx * i as f32 + if j % 2 == 0 { 0.0 } else { r } + jitter;
                 particles[p_idx].y = start_y + r + dy * j as f32;
-                particles[p_idx].color = (0.0, 0.5, 1.0);
 
                 p_idx += 1;
                 num_particles += 1;
@@ -186,21 +185,21 @@ impl Simulation {
                 let cell_nr = xi * self.p_num_y + yi;
 
                 self.num_cell_particles[cell_nr] += 1;
-                self.particle_cell_nrs[i] = cell_nr;
+                self.particle_cell_nrs[i] = cell_nr as u8;
             }
 
             let mut first = 0;
             for i in 0..self.p_num_cells {
                 first += self.num_cell_particles[i];
-                self.first_cell_particle[i] = first as usize;
+                self.first_cell_particle[i] = first as u8;
             }
-            self.first_cell_particle[self.p_num_cells] = first as usize;
+            self.first_cell_particle[self.p_num_cells] = first as u8;
 
             for i in 0..self.num_particles {
                 let cell_nr = self.particle_cell_nrs[i];
-                self.first_cell_particle[cell_nr] -= 1;
-                let idx = self.first_cell_particle[cell_nr];
-                self.cell_particle_ids[idx] = i;
+                self.first_cell_particle[cell_nr as usize] -= 1;
+                let idx = self.first_cell_particle[cell_nr as usize];
+                self.cell_particle_ids[idx as usize] = i as u8;
             }
 
             for i in 0..self.num_particles {
@@ -224,7 +223,7 @@ impl Simulation {
                         let end = self.first_cell_particle[cell_nr + 1];
 
                         for j in start..end {
-                            let id2 = self.cell_particle_ids[j];
+                            let id2 = self.cell_particle_ids[j as usize] as usize;
                             if i == id2 {
                                 continue;
                             }
@@ -817,34 +816,15 @@ impl Simulation {
         }
     }
 
-    pub fn update_cell_colors(&mut self, mono_mode: bool) {
+    pub fn update_cell_colors(&mut self) {
         for i in 0..self.f_num_cells {
             if self.grid[i].cell_type == CellTypes::Solid {
-                self.grid[i].color = (0.5, 0.5, 0.5);
+                self.grid[i].color = 15;
             } else if self.grid[i].cell_type == CellTypes::Liquid {
-                if mono_mode {
-                    // Stały kolor płynu, np. niebieski
-                    self.grid[i].color = (1.0, 0.4, 1.0);
-                } else {
-                    let mut d = self.grid[i].particle_density;
-                    if self.particle_rest_density > 0.0 {
-                        d /= self.particle_rest_density;
-                    }
-                    let mut val = d.clamp(0.0, 1.99);
-                    val /= 2.0;
-                    let m = 0.25;
-                    let num = (val / m).floor() as i32;
-                    let s = (val - num as f32 * m) / m;
-                    self.grid[i].color = match num {
-                        0 => (0.0, s, 1.0),
-                        1 => (0.0, 1.0, 1.0 - s),
-                        2 => (s, 1.0, 0.0),
-                        3 => (1.0, 1.0 - s, 0.0),
-                        _ => (0.0, 0.0, 0.0),
-                    };
-                }
+                // Stały kolor płynu, np. niebieski
+                self.grid[i].color = 7;
             } else {
-                self.grid[i].color = (0.0, 0.0, 0.0); // Gas – czarne
+                self.grid[i].color = 0; // Gas – czarne
             }
         }
     }
@@ -873,6 +853,6 @@ impl Simulation {
         );
         self.transfer_velocities(false, runtime.flip_ratio);
 
-        self.update_cell_colors(runtime.mono_mode);
+        self.update_cell_colors();
     }
 }

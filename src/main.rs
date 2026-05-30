@@ -2,13 +2,14 @@
 #![no_main]
 
 #[global_allocator]
-static ALLOCATOR: emballoc::Allocator<4096> = emballoc::Allocator::new();
+static ALLOCATOR: emballoc::Allocator<58000> = emballoc::Allocator::new();
 
 #[macro_use]
 extern crate alloc;
 pub mod simulation;
 pub mod config;
 
+use embassy_time::Timer;
 use simulation::*;
 use config::*;
 use defmt::*;
@@ -102,6 +103,17 @@ fn send_data_to_screen(data: &[u8], i2c: I2cRef) {
     }
 }
 
+fn send_sim_data_to_screen(sim: &Simulation, i2c: I2cRef) {
+    let mut buffer = [0u8; 17];
+    buffer[0] = CO_DATA | CO_CONT;
+    let ld = data.len();
+    for x in (0..ld).step_by(16) {
+        buffer[1..].fill(0);
+        buffer[1..].copy_from_slice(&data[x..(x + 16).min(ld)]);
+        i2c.blocking_write(OLED, &buffer).unwrap();
+    }
+}
+
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
 
@@ -121,8 +133,15 @@ async fn main(_spawner: Spawner) {
     set_ranges(&mut i2c, 0, 0, 96, 96);
     send_data_to_screen(screendata, &mut i2c);
 
-    let mut sim_config = CONFIG.clone();
+    let sim_config = CONFIG.clone();
     let mut runtime_config = INITIAL_RUNTIME_CONFIG.clone();
 
     let mut sim = Simulation::new(&sim_config);
+
+    loop{
+        sim.simulate(&runtime_config);
+        // TODO: Timer::after_micros(100).await;
+
+        
+    }
 }
