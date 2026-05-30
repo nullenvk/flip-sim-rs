@@ -105,14 +105,14 @@ fn send_data_to_screen(data: &[u8], i2c: I2cRef) {
 }
 
 fn send_sim_data_to_screen(sim: &Simulation, i2c: I2cRef) {
-    set_ranges(i2c, 0, 0, sim.config.width as u8, sim.config.height as u8);
+    set_ranges(i2c, 0, 0,96,96);
     let mut row_buffer = [0u8; 1 + 48];
-    assert_eq!(sim.f_num_x, 16);
+    // assert_eq!(sim.f_num_x, 16);
     row_buffer[0] = CO_DATA | CO_CONT;
 
     for row in 0..sim.f_num_y {
         for _ in 0..6 {
-            for col_root in 0..sim.f_num_x {
+            for col_root in 0..16 {
                 let col = sim.get_cell(col_root, row).color;
                 let byte = (col << 4) | col;
                 row_buffer[(1 + col_root * 3) as usize] = byte;
@@ -134,7 +134,7 @@ async fn main(_spawner: Spawner) {
 
     let p = embassy_stm32::init(syscfg);
     let mut conf = i2c::Config::default();
-    conf.frequency = Hertz::khz(400);
+    conf.frequency = Hertz::khz(1600);
     let mut i2c = I2c::new_blocking(p.I2C1, p.PB6, p.PB7, conf);
     send_init(&mut i2c);
     clear_screen(&mut i2c);
@@ -205,7 +205,7 @@ async fn main(_spawner: Spawner) {
     sim.num_particles = p_idx;
     clear_screen(&mut i2c);
     loop{
-        send_sim_data_to_screen(&sim, 3, &mut i2c);
+        send_sim_data_to_screen(&sim, &mut i2c);
         sim.simulate(&runtime_config);
         // TODO: Timer::after_micros(100).await;
 

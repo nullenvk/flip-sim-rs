@@ -197,7 +197,7 @@ impl Simulation {
 
             for i in 0..self.num_particles {
                 let cell_nr = self.particle_cell_nrs[i];
-                self.first_cell_particle[cell_nr as usize] -= 1;
+                self.first_cell_particle[cell_nr as usize] = self.first_cell_particle[cell_nr as usize].saturating_sub(1);
                 let idx = self.first_cell_particle[cell_nr as usize];
                 self.cell_particle_ids[idx as usize] = i as u8;
             }
