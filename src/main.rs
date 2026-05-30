@@ -16,6 +16,8 @@ use embassy_executor::Spawner;
 use embassy_stm32::{Config, i2c::{self, Master}, mode::Blocking, rcc::{Pll, PllRDiv::DIV2, PllSource}, time::Hertz};
 use {defmt_rtt as _, panic_probe as _};
 use embassy_stm32::i2c::I2c;
+use num_traits::Float;
+use defmt::info;
 
 const SET_COL_ADDR: u8 =  0x15;
 const SET_SCROLL_DEACTIVATE: u8 =  0x2E;
@@ -109,11 +111,12 @@ fn send_sim_data_to_screen(sim: &Simulation, i2c: I2cRef) {
     buffer[0] = CO_DATA | CO_CONT;
 
     for row in 0..sim.f_num_y {
-        for col_root in (0..sim.f_num_x).step_by(2) {
-            buffer[(1 + (col_root as u8 % 32) >> 1) as usize] = sim.get_cell(col_root, row).color |
+        for col_root in (0..sim.f_num_x - 1).step_by(2) {
+            buffer[(1 +((col_root as u8 % 32) >> 1))as usize] = (sim.get_cell(col_root, row).color << 4)|
                                                                 sim.get_cell(col_root + 1, row).color;
             if (col_root % 32) == 30 {
                 i2c.blocking_write(OLED, &buffer).unwrap();
+                // info!("{:?}",buffer)
             }
         }
     }
@@ -142,8 +145,65 @@ async fn main(_spawner: Spawner) {
     let mut runtime_config = INITIAL_RUNTIME_CONFIG.clone();
 
     let mut sim = Simulation::new(&sim_config);
+    // ---------- NOWY KSZTAŁT: KOŁO ----------
+    let cx = sim.f_num_x as f32 * sim.h * 0.5; // środek domeny X
+    let cy = sim.f_num_y as f32 * sim.h * 0.5; // środek domeny Y
+    let radius = (sim.f_num_x.min(sim.f_num_y) as f32 * sim.h) * 0.45; // 45% krótszego boku
 
+    // Ustaw komórki: wewnątrz koła -> s=1.0, na zewnątrz -> s=0.0 (Solid)
+    for x in 0..sim.f_num_x {
+        for y in 0..sim.f_num_y {
+            let cell_center_x = (x as f32 + 0.5) * sim.h;
+            let cell_center_y = (y as f32 + 0.5) * sim.h;
+            let dx = cell_center_x - cx;
+            let dy = cell_center_y - cy;
+            let in_circle = dx * dx + dy * dy <= radius * radius;
+
+            let cell_nr = x * sim.f_num_y + y;
+            sim.grid[cell_nr].s = if in_circle { 1.0 } else { 0.0 };
+            sim.grid[cell_nr].cell_type = if in_circle {
+                cell::CellTypes::Gas
+            } else {
+                cell::CellTypes::Solid
+            };
+        }
+    }
+
+    // ---------- NOWE CZĄSTKI W KOLE ----------
+    // Wyczyść stare cząstki
+    sim.num_particles = 0;
+    let r = CONFIG.particle_radius;
+    let dx = 2.0 * r;
+    let dy = (3.0_f32).sqrt() / 2.0 * dx;
+
+    // Ile cząstek zmieści się w prostokącie opisującym koło (przybliżenie)
+    let num_x = ((2.0 * radius - 2.0 * r) / dx).floor() as usize;
+    let num_y = ((2.0 * radius - 2.0 * r) / dy).floor() as usize;
+    let start_x = cx - radius + r;
+    let start_y = cy - radius + r;
+
+    let mut p_idx = 0;
+    'spawn: for j in 0..num_y {
+        for i in 0..num_x {
+            if p_idx >= CONFIG.max_particles {
+                break 'spawn;
+            }
+            let px = start_x + dx * i as f32 + if j % 2 == 0 { 0.0 } else { r };
+            let py = start_y + dy * j as f32;
+
+            // sprawdź, czy cząstka jest wewnątrz koła
+            if (px - cx) * (px - cx) + (py - cy) * (py - cy) <= (radius - r) * (radius - r) {
+                let jitter = if p_idx % 2 == 0 { 1e-4 } else { -1e-4 };
+                sim.particles[p_idx].x = px + jitter;
+                sim.particles[p_idx].y = py;
+                p_idx += 1;
+            }
+        }
+    }
+    sim.num_particles = p_idx;
+    clear_screen(&mut i2c);
     loop{
+        send_sim_data_to_screen(&sim, &mut i2c);
         sim.simulate(&runtime_config);
         // TODO: Timer::after_micros(100).await;
 

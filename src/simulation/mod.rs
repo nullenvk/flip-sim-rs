@@ -821,10 +821,9 @@ impl Simulation {
             if self.grid[i].cell_type == CellTypes::Solid {
                 self.grid[i].color = 15;
             } else if self.grid[i].cell_type == CellTypes::Liquid {
-                // Stały kolor płynu, np. niebieski
                 self.grid[i].color = 7;
             } else {
-                self.grid[i].color = 0; // Gas – czarne
+                self.grid[i].color = 0;
             }
         }
     }
