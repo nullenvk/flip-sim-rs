@@ -106,18 +106,20 @@ fn send_data_to_screen(data: &[u8], i2c: I2cRef) {
 
 fn send_sim_data_to_screen(sim: &Simulation, i2c: I2cRef) {
     set_ranges(i2c, 0, 0, sim.config.width as u8, sim.config.height as u8);
-    assert_eq!((sim.config.width) % 32, 0);
-    let mut buffer = [0u8; 17];
-    buffer[0] = CO_DATA | CO_CONT;
+    let mut row_buffer = [0u8; 1 + 48];
+    assert_eq!(sim.f_num_x, 16);
+    row_buffer[0] = CO_DATA | CO_CONT;
 
     for row in 0..sim.f_num_y {
-        for col_root in (0..sim.f_num_x - 1).step_by(2) {
-            buffer[(1 +((col_root as u8 % 32) >> 1))as usize] = (sim.get_cell(col_root, row).color << 4)|
-                                                                sim.get_cell(col_root + 1, row).color;
-            if (col_root % 32) == 30 {
-                i2c.blocking_write(OLED, &buffer).unwrap();
-                // info!("{:?}",buffer)
+        for _ in 0..6 {
+            for col_root in 0..sim.f_num_x {
+                let col = sim.get_cell(col_root, row).color;
+                let byte = (col << 4) | col;
+                row_buffer[(1 + col_root * 3) as usize] = byte;
+                row_buffer[(1 + col_root * 3 + 1) as usize] = byte;
+                row_buffer[(1 + col_root * 3 + 2) as usize] = byte;
             }
+            i2c.blocking_write(OLED, &row_buffer).unwrap();
         }
     }
 }
@@ -203,7 +205,7 @@ async fn main(_spawner: Spawner) {
     sim.num_particles = p_idx;
     clear_screen(&mut i2c);
     loop{
-        send_sim_data_to_screen(&sim, &mut i2c);
+        send_sim_data_to_screen(&sim, 3, &mut i2c);
         sim.simulate(&runtime_config);
         // TODO: Timer::after_micros(100).await;
 
