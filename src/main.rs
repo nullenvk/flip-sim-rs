@@ -1,6 +1,16 @@
 #![no_std]
 #![no_main]
 
+#[global_allocator]
+static ALLOCATOR: emballoc::Allocator<4096> = emballoc::Allocator::new();
+
+#[macro_use]
+extern crate alloc;
+pub mod simulation;
+pub mod config;
+
+use simulation::*;
+use config::*;
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_stm32::{Config, i2c::{self, Master}, mode::Blocking, rcc::{Pll, PllRDiv::DIV2, PllSource}, time::Hertz};
@@ -94,6 +104,7 @@ fn send_data_to_screen(data: &[u8], i2c: I2cRef) {
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
+
     let mut syscfg = Config::default();
     syscfg.rcc.hsi = true;
     syscfg.rcc.pll = Some(Pll { source: PllSource::HSI, mul: embassy_stm32::rcc::PllMul::MUL10, prediv: embassy_stm32::rcc::PllPreDiv::DIV1, divr: Some(DIV2), divq: None, divp: None });
@@ -109,4 +120,9 @@ async fn main(_spawner: Spawner) {
     let screendata = include_bytes!("raw");
     set_ranges(&mut i2c, 0, 0, 96, 96);
     send_data_to_screen(screendata, &mut i2c);
+
+    let mut sim_config = CONFIG.clone();
+    let mut runtime_config = INITIAL_RUNTIME_CONFIG.clone();
+
+    let mut sim = Simulation::new(&sim_config);
 }

@@ -2,6 +2,7 @@ pub mod cell;
 pub mod config;
 pub mod particle;
 
+use alloc::vec::*;
 use cell::*;
 use config::*;
 use particle::*;
@@ -36,6 +37,7 @@ pub struct Simulation {
 
 impl Simulation {
     pub fn new(config: &Config) -> Simulation {
+
         // let total_cells = config.width * config.height;
         let f_num_x = (config.width as f32 / config.spacing).floor() as usize + 1;
         let f_num_y = (config.height as f32 / config.spacing).floor() as usize + 1;

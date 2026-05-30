@@ -7,7 +7,7 @@ runner = "probe-rs run --chip STM32L432KCUx --connect-under-reset --speed 3300"
 
 
 [build]
-target = "thumbv7em-none-eabi"
+target = "thumbv7em-none-eabihf"
 
 [env]
 DEFMT_LOG = "info"
