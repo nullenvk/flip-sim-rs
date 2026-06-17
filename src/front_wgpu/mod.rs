@@ -21,38 +21,25 @@ pub struct Uniforms {
     pub _padding: u32, // 16-byte alignment
 }
 
-pub struct FrontWgpu {
-    _window: Arc<winit::window::Window>, // workaround z tutoriala
+fn sim_to_gpu_coords(val: f32, max: f32) -> f32 {
+    (val / max) * 2.0 - 1.0
+}
+
+pub struct WgpuContext {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     surf_config: wgpu::SurfaceConfiguration,
     phys_size: winit::dpi::PhysicalSize<u32>,
-
-    render_pipeline: wgpu::RenderPipeline,
-
-    particle_buffer: wgpu::Buffer,
-    particle_bind_group: wgpu::BindGroup,
-
-    grid_buffer: wgpu::Buffer,
-    grid_bind_group: wgpu::BindGroup,
-
-    grid_instances: Vec<ParticleInstance>,
-
-    pub sim: Simulation,
-    pub runtime_config: RuntimeConfig,
 }
 
-impl FrontWgpu {
-    pub async fn new(
-        window: Arc<winit::window::Window>,
-        sim: Simulation,
-        runtime_config: RuntimeConfig,
-    ) -> Self {
+
+impl WgpuContext {
+    async fn new(window: &Arc<winit::window::Window>) -> Self {
         let phys_size = window.inner_size();
 
         let instance = wgpu::Instance::default();
-        let surface = instance.create_surface(Arc::clone(&window)).unwrap();
+        let surface = instance.create_surface(Arc::clone(window)).unwrap();
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
@@ -81,6 +68,63 @@ impl FrontWgpu {
         };
         surface.configure(&device, &surf_config);
 
+        Self {
+            surface,
+            device,
+            queue,
+            surf_config,
+            phys_size,
+        }
+    }
+}
+
+pub struct FrontWgpu {
+    _window: Arc<winit::window::Window>,
+    ctx: WgpuContext,
+
+    render_pipeline: wgpu::RenderPipeline,
+
+    particle_buffer: wgpu::Buffer,
+    particle_bind_group: wgpu::BindGroup,
+
+    grid_buffer: wgpu::Buffer,
+    grid_bind_group: wgpu::BindGroup,
+
+    grid_instances: Vec<ParticleInstance>,
+
+    pub sim: Simulation,
+    pub runtime_config: RuntimeConfig,
+}
+
+impl FrontWgpu {
+    pub async fn new(
+        window: Arc<winit::window::Window>,
+        sim: Simulation,
+        runtime_config: RuntimeConfig,
+    ) -> Self {
+        let ctx = WgpuContext::new(&window).await;
+
+        let (grid_buffer, particle_buffer) = Self::create_vertex_buffers(&ctx.device, &sim);
+        let (grid_bind_group, particle_bind_group, bind_group_layout) =
+            Self::create_bind_groups(&ctx.device, &sim);
+        let render_pipeline = Self::create_render_pipeline(&ctx.device, &ctx.surf_config, &bind_group_layout);
+        let grid_instances = Self::init_grid_instances(&sim);
+
+        Self {
+            _window: window,
+            ctx,
+            render_pipeline,
+            particle_buffer,
+            grid_buffer,
+            grid_bind_group,
+            particle_bind_group,
+            grid_instances,
+            sim,
+            runtime_config,
+        }
+    }
+
+    fn create_vertex_buffers(device: &wgpu::Device, sim: &Simulation) -> (wgpu::Buffer, wgpu::Buffer) {
         let grid_buffer_size =
             (sim.f_num_cells * std::mem::size_of::<ParticleInstance>()) as wgpu::BufferAddress;
         let grid_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -90,8 +134,7 @@ impl FrontWgpu {
             mapped_at_creation: false,
         });
 
-        let particle_buffer_size = (sim.config.max_particles
-            * std::mem::size_of::<ParticleInstance>())
+        let particle_buffer_size = (sim.config.max_particles * std::mem::size_of::<ParticleInstance>())
             as wgpu::BufferAddress;
         let particle_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Particle Buffer"),
@@ -100,6 +143,13 @@ impl FrontWgpu {
             mapped_at_creation: false,
         });
 
+        (grid_buffer, particle_buffer)
+    }
+
+    fn create_bind_groups(
+        device: &wgpu::Device,
+        sim: &Simulation,
+    ) -> (wgpu::BindGroup, wgpu::BindGroup, wgpu::BindGroupLayout) {
         let w = sim.config.width as f32;
         let h = sim.config.height as f32;
 
@@ -130,23 +180,22 @@ impl FrontWgpu {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let uniform_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-                label: Some("uniform_bind_group_layout"),
-            });
+        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+            label: Some("uniform_bind_group_layout"),
+        });
 
         let particle_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &uniform_bind_group_layout,
+            layout: &layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: particle_uniform_buffer.as_entire_binding(),
@@ -155,7 +204,7 @@ impl FrontWgpu {
         });
 
         let grid_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &uniform_bind_group_layout,
+            layout: &layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: grid_uniform_buffer.as_entire_binding(),
@@ -163,15 +212,23 @@ impl FrontWgpu {
             label: Some("grid_bind_group"),
         });
 
+        (grid_bind_group, particle_bind_group, layout)
+    }
+
+    fn create_render_pipeline(
+        device: &wgpu::Device,
+        surf_config: &wgpu::SurfaceConfiguration,
+        bind_group_layout: &wgpu::BindGroupLayout,
+    ) -> wgpu::RenderPipeline {
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("Some Pipeline Layout"),
-            bind_group_layouts: &[Some(&uniform_bind_group_layout)],
+            bind_group_layouts: &[Some(bind_group_layout)],
             immediate_size: 0,
         });
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
@@ -213,8 +270,10 @@ impl FrontWgpu {
             multisample: wgpu::MultisampleState::default(),
             multiview_mask: None,
             cache: None,
-        });
+        })
+    }
 
+    fn init_grid_instances(sim: &Simulation) -> Vec<ParticleInstance> {
         let mut grid_instances = vec![
             ParticleInstance {
                 position: [0.0, 0.0],
@@ -225,39 +284,26 @@ impl FrontWgpu {
 
         for x in 0..sim.f_num_x {
             for y in 0..sim.f_num_y {
-                let pos_x = ((x as f32 + 0.5) * sim.h / sim.config.width as f32) * 2.0 - 1.0;
-                let pos_y = ((y as f32 + 0.5) * sim.h / sim.config.height as f32) * 2.0 - 1.0;
+                let sim_pos_x = (x as f32 + 0.5) * sim.h;
+                let sim_pos_y = (y as f32 + 0.5) * sim.h;
+
+                let pos_x = sim_to_gpu_coords(sim_pos_x, sim.config.width as f32);
+                let pos_y = sim_to_gpu_coords(sim_pos_y, sim.config.height as f32);
+
                 grid_instances[x * sim.f_num_y + y].position = [pos_x, pos_y];
             }
         }
-
-        Self {
-            _window: window,
-            surface,
-            device,
-            queue,
-            surf_config,
-            phys_size,
-            render_pipeline,
-            particle_buffer,
-            grid_buffer,
-            grid_bind_group,
-            particle_bind_group,
-            grid_instances,
-            sim,
-            runtime_config,
-        }
+        grid_instances
     }
 
-    pub fn render(&mut self) {
+    fn update_buffers(&mut self) {
         let particle_instances: Vec<ParticleInstance> = self.sim.particles
             [..self.sim.num_particles]
             .iter()
             .map(|p| ParticleInstance {
-                // sim coords to gpu coords ( [-1.0, 1.0] )
                 position: [
-                    (p.x / self.sim.config.width as f32) * 2.0 - 1.0,
-                    (p.y / self.sim.config.height as f32) * 2.0 - 1.0,
+                    sim_to_gpu_coords(p.x, self.sim.config.width as f32),
+                    sim_to_gpu_coords(p.y, self.sim.config.height as f32),
                 ],
                 color: [p.color.0, p.color.1, p.color.2],
             })
@@ -271,19 +317,23 @@ impl FrontWgpu {
             }
         }
 
-        self.queue.write_buffer(
+        self.ctx.queue.write_buffer(
             &self.particle_buffer,
             0,
             bytemuck::cast_slice(&particle_instances),
         );
 
-        self.queue.write_buffer(
+        self.ctx.queue.write_buffer(
             &self.grid_buffer,
             0,
             bytemuck::cast_slice(&self.grid_instances),
         );
+    }
 
-        let output = match self.surface.get_current_texture() {
+    pub fn render(&mut self) {
+        self.update_buffers();
+
+        let output = match self.ctx.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(surface_texture) => surface_texture,
             wgpu::CurrentSurfaceTexture::Suboptimal(surface_texture) => surface_texture,
             _ => return,
@@ -293,7 +343,7 @@ impl FrontWgpu {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
         let mut encoder = self
-            .device
+            .ctx.device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
@@ -331,16 +381,16 @@ impl FrontWgpu {
             }
         }
 
-        self.queue.submit(std::iter::once(encoder.finish()));
+        self.ctx.queue.submit(std::iter::once(encoder.finish()));
         output.present();
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
-            self.phys_size = new_size;
-            self.surf_config.width = new_size.width;
-            self.surf_config.height = new_size.height;
-            self.surface.configure(&self.device, &self.surf_config);
+            self.ctx.phys_size = new_size;
+            self.ctx.surf_config.width = new_size.width;
+            self.ctx.surf_config.height = new_size.height;
+            self.ctx.surface.configure(&self.ctx.device, &self.ctx.surf_config);
         }
     }
 }

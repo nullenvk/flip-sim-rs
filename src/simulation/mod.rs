@@ -316,7 +316,7 @@ impl Simulation {
         }
     }
 
-    pub fn handle_particle_collisions(&mut self, obstacle_x: f32, obstacle_y: f32, obstacle_radius: f32, obstacle_vel_x: f32, obstacle_vel_y: f32) {
+    pub fn handle_particle_collisions(&mut self) {
         // Parametry okrągłego zbiornika – muszą być zgodne z tymi w main.rs
         let cx = (self.f_num_x as f32) * self.h * 0.5;
         let cy = (self.f_num_y as f32) * self.h * 0.5;
@@ -675,13 +675,7 @@ impl Simulation {
         if runtime.separate_particles {
             self.push_particles_apart(runtime.num_particle_iters);
         }
-        self.handle_particle_collisions(
-            runtime.obstacle_x,
-            runtime.obstacle_y,
-            runtime.obstacle_radius,
-            runtime.obstacle_vel_x,
-            runtime.obstacle_vel_y,
-        );
+        self.handle_particle_collisions();
 
         self.transfer_velocities(true, runtime.flip_ratio);
         self.update_particle_density();
