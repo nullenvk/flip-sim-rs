@@ -447,6 +447,8 @@ impl FrontWgpu {
     }
 
     fn draw_ui(&mut self) {
+        self.egui_ctx.set_pixels_per_point(0.75); // UI Scale
+
         egui::Window::new("Simulation Controls").show(&self.egui_ctx, |ui| {
             ui.heading("Time & Forces");
             ui.add(egui::Slider::new(&mut self.runtime_config.dt, 0.001..=0.05).text("Delta Time"));
