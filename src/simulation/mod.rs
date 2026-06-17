@@ -347,59 +347,6 @@ impl Simulation {
         }
     }
 
-    //oryginalna, przepisana z js
-    // pub fn handle_particle_collisions(&mut self, obstacle_x: f32, obstacle_y: f32, obstacle_radius: f32, obstacle_vel_x: f32, obstacle_vel_y: f32) {
-    //     let h = 1.0 / self.f_inv_spacing;
-    //     let r = self.config.particle_radius;
-    //     let min_dist = obstacle_radius + r;
-    //     let min_dist2 = min_dist * min_dist;
-
-    //     let min_x = h + r;
-    //     let max_x = (self.f_num_x as f32 - 1.0) * h - r;
-    //     let min_y = h + r;
-    //     let max_y = (self.f_num_y as f32 - 1.0) * h - r;
-
-    //     for i in 0..self.num_particles {
-    //         let mut x = self.particles[i].x;
-    //         let mut y = self.particles[i].y;
-
-    //         let dx = x - obstacle_x;
-    //         let dy = y - obstacle_y;
-    //         let d2 = dx * dx + dy * dy;
-
-    //         if d2 < min_dist2 {
-
-    //             let d = d2.sqrt().max(1e-8); // unikaj dzielenia przez 0
-    //             let penetration = min_dist - d;
-    //             x += (dx / d) * penetration;
-    //             y += (dy / d) * penetration;
-
-    //             self.particles[i].vx = obstacle_vel_x;
-    //             self.particles[i].vy = obstacle_vel_y;
-    //         }
-
-    //         if x < min_x {
-    //             x = min_x;
-    //             self.particles[i].vx = 0.0;
-    //         }
-    //         if x > max_x {
-    //             x = max_x;
-    //             self.particles[i].vx = 0.0;
-    //         }
-    //         if y < min_y {
-    //             y = min_y;
-    //             self.particles[i].vy = 0.0;
-    //         }
-    //         if y > max_y {
-    //             y = max_y;
-    //             self.particles[i].vy = 0.0;
-    //         }
-
-    //         self.particles[i].x = x;
-    //         self.particles[i].y = y;
-    //     }
-    // }
-
     pub fn transfer_velocities(&mut self, to_grid: bool, flip_ratio: f32) {
         let n = self.f_num_y;
         let h = self.h;
