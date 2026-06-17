@@ -316,160 +316,140 @@ impl Simulation {
         }
     }
         // jakies gowno z chata
+//     pub fn handle_particle_collisions(&mut self, obstacle_x: f32, obstacle_y: f32, obstacle_radius: f32, obstacle_vel_x: f32, obstacle_vel_y: f32) {
+//     let h = self.h;
+//     let inv_h = self.f_inv_spacing;
+//     let particle_r = self.config.particle_radius;
+
+//     let min_dist_obstacle = obstacle_radius + particle_r;
+//     let min_dist2_obstacle = min_dist_obstacle * min_dist_obstacle;
+
+//     for i in 0..self.num_particles {
+//         let mut x = self.particles[i].x;
+//         let mut y = self.particles[i].y;
+
+//         // --- przeszkoda (obstacle) ---
+//         if obstacle_radius > 0.0 {
+//             let dx = x - obstacle_x;
+//             let dy = y - obstacle_y;
+//             let d2 = dx * dx + dy * dy;
+//             if d2 < min_dist2_obstacle {
+//                 let d = d2.sqrt().max(1e-8);
+//                 let penetration = min_dist_obstacle - d;
+//                 let nx = dx / d;
+//                 let ny = dy / d;
+//                 x += nx * penetration;
+//                 y += ny * penetration;
+//                 let vn = self.particles[i].vx * nx + self.particles[i].vy * ny;
+//                 if vn < 0.0 {
+//                     self.particles[i].vx -= vn * nx;
+//                     self.particles[i].vy -= vn * ny;
+//                 }
+//                 self.particles[i].vx += obstacle_vel_x;
+//                 self.particles[i].vy += obstacle_vel_y;
+//             }
+//         }
+
+//         // --- wypychanie z dowolnego kształtu Solid ---
+//         let xi = ((x * inv_h).floor() as i32).clamp(0, self.f_num_x as i32 - 1) as usize;
+//         let yi = ((y * inv_h).floor() as i32).clamp(0, self.f_num_y as i32 - 1) as usize;
+//         let mut cell_idx = xi * self.f_num_y + yi;
+
+//         if self.grid[cell_idx].cell_type == CellTypes::Solid {
+//             // Szukamy NAJBLIŻSZEJ komórki nie‑Solid, przeszukując CAŁĄ siatkę
+//             let mut best_dist2 = f32::MAX;
+//             let mut best_nx = 0.0f32;
+//             let mut best_ny = 0.0f32;
+
+//             // Zamiast ograniczonego promienia, przejdź po wszystkich komórkach
+//             // To tanie, bo wywołuje się tylko dla cząstek, które już są w ścianie.
+//             for ix in 0..self.f_num_x {
+//                 for iy in 0..self.f_num_y {
+//                     let idx = ix * self.f_num_y + iy;
+//                     if self.grid[idx].cell_type != CellTypes::Solid {
+//                         let cx = (ix as f32 + 0.5) * h;
+//                         let cy = (iy as f32 + 0.5) * h;
+//                         let dx = cx - x;
+//                         let dy = cy - y;
+//                         let d2 = dx * dx + dy * dy;
+//                         if d2 < best_dist2 {
+//                             best_dist2 = d2;
+//                             best_nx = dx;
+//                             best_ny = dy;
+//                         }
+//                     }
+//                 }
+//             }
+
+//             if best_dist2 < f32::MAX {
+//                 let dist = best_nx.hypot(best_ny);
+//                 let nx = best_nx / dist;
+//                 let ny = best_ny / dist;
+
+//                 // Usuń tylko składową normalną prędkości (jeśli skierowana w ścianę)
+//                 let vn = self.particles[i].vx * nx + self.particles[i].vy * ny;
+//                 if vn < 0.0 {
+//                     self.particles[i].vx -= vn * nx;
+//                     self.particles[i].vy -= vn * ny;
+//                 }
+
+//                 // Przesuwamy cząstkę wzdłuż normalnej aż WYJDZIE z Solid
+//                 // Małymi krokami, aby nie przeskoczyć na drugą stronę cienkich ścian
+//                 let step = h * 0.1;
+//                 let max_steps = ((dist / step).ceil() as i32).min(1000);
+//                 for _ in 0..max_steps {
+//                     x += nx * step;
+//                     y += ny * step;
+//                     let xi2 = ((x * inv_h).floor() as i32).clamp(0, self.f_num_x as i32 - 1) as usize;
+//                     let yi2 = ((y * inv_h).floor() as i32).clamp(0, self.f_num_y as i32 - 1) as usize;
+//                     if self.grid[xi2 * self.f_num_y + yi2].cell_type != CellTypes::Solid {
+//                         break; // Jesteśmy w płynie
+//                     }
+//                 }
+//             } else {
+//                 // Brak płynnej komórki w całej siatce – nie powinno się zdarzyć
+//                 // Zerujemy prędkość i zostawiamy na miejscu
+//                 self.particles[i].vx = 0.0;
+//                 self.particles[i].vy = 0.0;
+//             }
+//         }
+
+//         self.particles[i].x = x;
+//         self.particles[i].y = y;
+//     }
+// }
+
+    //z chata do kola
     pub fn handle_particle_collisions(&mut self, obstacle_x: f32, obstacle_y: f32, obstacle_radius: f32, obstacle_vel_x: f32, obstacle_vel_y: f32) {
-    let h = self.h;
-    let inv_h = self.f_inv_spacing;
-    let particle_r = self.config.particle_radius;
+        // Parametry okrągłego zbiornika – muszą być zgodne z tymi w main.rs
+        let cx = (self.f_num_x as f32) * self.h * 0.5;
+        let cy = (self.f_num_y as f32) * self.h * 0.5;
+        let radius = (self.f_num_x.min(self.f_num_y) as f32 * self.h) * 0.45;
+        let inner_radius = radius - self.config.particle_radius;   // max odległość środka cząstki od centrum
 
-    let min_dist_obstacle = obstacle_radius + particle_r;
-    let min_dist2_obstacle = min_dist_obstacle * min_dist_obstacle;
-
-    for i in 0..self.num_particles {
-        let mut x = self.particles[i].x;
-        let mut y = self.particles[i].y;
-
-        // --- przeszkoda (obstacle) ---
-        if obstacle_radius > 0.0 {
-            let dx = x - obstacle_x;
-            let dy = y - obstacle_y;
-            let d2 = dx * dx + dy * dy;
-            if d2 < min_dist2_obstacle {
-                let d = d2.sqrt().max(1e-8);
-                let penetration = min_dist_obstacle - d;
-                let nx = dx / d;
-                let ny = dy / d;
-                x += nx * penetration;
-                y += ny * penetration;
-                let vn = self.particles[i].vx * nx + self.particles[i].vy * ny;
-                if vn < 0.0 {
-                    self.particles[i].vx -= vn * nx;
-                    self.particles[i].vy -= vn * ny;
-                }
-                self.particles[i].vx += obstacle_vel_x;
-                self.particles[i].vy += obstacle_vel_y;
-            }
-        }
-
-        // --- wypychanie z dowolnego kształtu Solid ---
-        let xi = ((x * inv_h).floor() as i32).clamp(0, self.f_num_x as i32 - 1) as usize;
-        let yi = ((y * inv_h).floor() as i32).clamp(0, self.f_num_y as i32 - 1) as usize;
-        let mut cell_idx = xi * self.f_num_y + yi;
-
-        if self.grid[cell_idx].cell_type == CellTypes::Solid {
-            // Szukamy NAJBLIŻSZEJ komórki nie‑Solid, przeszukując CAŁĄ siatkę
-            let mut best_dist2 = f32::MAX;
-            let mut best_nx = 0.0f32;
-            let mut best_ny = 0.0f32;
-
-            // Zamiast ograniczonego promienia, przejdź po wszystkich komórkach
-            // To tanie, bo wywołuje się tylko dla cząstek, które już są w ścianie.
-            for ix in 0..self.f_num_x {
-                for iy in 0..self.f_num_y {
-                    let idx = ix * self.f_num_y + iy;
-                    if self.grid[idx].cell_type != CellTypes::Solid {
-                        let cx = (ix as f32 + 0.5) * h;
-                        let cy = (iy as f32 + 0.5) * h;
-                        let dx = cx - x;
-                        let dy = cy - y;
-                        let d2 = dx * dx + dy * dy;
-                        if d2 < best_dist2 {
-                            best_dist2 = d2;
-                            best_nx = dx;
-                            best_ny = dy;
-                        }
-                    }
-                }
-            }
-
-            if best_dist2 < f32::MAX {
-                let dist = best_nx.hypot(best_ny);
-                let nx = best_nx / dist;
-                let ny = best_ny / dist;
-
-                // Usuń tylko składową normalną prędkości (jeśli skierowana w ścianę)
-                let vn = self.particles[i].vx * nx + self.particles[i].vy * ny;
-                if vn < 0.0 {
-                    self.particles[i].vx -= vn * nx;
-                    self.particles[i].vy -= vn * ny;
-                }
-
-                // Przesuwamy cząstkę wzdłuż normalnej aż WYJDZIE z Solid
-                // Małymi krokami, aby nie przeskoczyć na drugą stronę cienkich ścian
-                let step = h * 0.1;
-                let max_steps = ((dist / step).ceil() as i32).min(1000);
-                for _ in 0..max_steps {
-                    x += nx * step;
-                    y += ny * step;
-                    let xi2 = ((x * inv_h).floor() as i32).clamp(0, self.f_num_x as i32 - 1) as usize;
-                    let yi2 = ((y * inv_h).floor() as i32).clamp(0, self.f_num_y as i32 - 1) as usize;
-                    if self.grid[xi2 * self.f_num_y + yi2].cell_type != CellTypes::Solid {
-                        break; // Jesteśmy w płynie
-                    }
-                }
-            } else {
-                // Brak płynnej komórki w całej siatce – nie powinno się zdarzyć
-                // Zerujemy prędkość i zostawiamy na miejscu
+        for i in 0..self.num_particles {
+            let mut x = self.particles[i].x;
+            let mut y = self.particles[i].y;
+            // Kolizja z okrągłą ścianą
+            let dx = x - cx;
+            let dy = y - cy;
+            let dist = dx.hypot(dy);
+            if dist > inner_radius {
+                // Wypchnij cząstkę do środka
+                let nx = dx / dist;
+                let ny = dy / dist;
+                x = cx + nx * inner_radius;
+                y = cy + ny * inner_radius;
+                // Zatrzymaj prędkość (możesz też tylko stłumić, ale zerowanie działa stabilniej)
                 self.particles[i].vx = 0.0;
                 self.particles[i].vy = 0.0;
             }
+
+            // Aktualizacja pozycji
+            self.particles[i].x = x;
+            self.particles[i].y = y;
         }
-
-        self.particles[i].x = x;
-        self.particles[i].y = y;
     }
-}
-
-    //z chata do kola
-    // pub fn handle_particle_collisions(&mut self, obstacle_x: f32, obstacle_y: f32, obstacle_radius: f32, obstacle_vel_x: f32, obstacle_vel_y: f32) {
-    //     // Parametry okrągłego zbiornika – muszą być zgodne z tymi w main.rs
-    //     let cx = (self.f_num_x as f32 - 1.0) * self.h * 0.5;
-    //     let cy = (self.f_num_y as f32 - 1.0) * self.h * 0.5;
-    //     let radius = (self.f_num_x.min(self.f_num_y) as f32 * self.h) * 0.45;
-    //     let inner_radius = radius - self.config.particle_radius;   // max odległość środka cząstki od centrum
-
-    //     // Przeszkoda (jeśli nieużywana, obstacle_radius=0)
-    //     let min_dist_obstacle = obstacle_radius + self.config.particle_radius;
-    //     let min_dist2_obstacle = min_dist_obstacle * min_dist_obstacle;
-
-    //     for i in 0..self.num_particles {
-    //         let mut x = self.particles[i].x;
-    //         let mut y = self.particles[i].y;
-
-    //         // Kolizja z przeszkodą (jeśli obstacle_radius > 0)
-    //         if obstacle_radius > 0.0 {
-    //             let dx_obs = x - obstacle_x;
-    //             let dy_obs = y - obstacle_y;
-    //             let d2 = dx_obs * dx_obs + dy_obs * dy_obs;
-    //             if d2 < min_dist2_obstacle {
-    //                 let d = d2.sqrt().max(1e-8);
-    //                 let penetration = min_dist_obstacle - d;
-    //                 x += (dx_obs / d) * penetration;
-    //                 y += (dy_obs / d) * penetration;
-    //                 self.particles[i].vx = obstacle_vel_x;
-    //                 self.particles[i].vy = obstacle_vel_y;
-    //             }
-    //         }
-
-    //         // Kolizja z okrągłą ścianą
-    //         let dx = x - cx;
-    //         let dy = y - cy;
-    //         let dist = dx.hypot(dy);
-    //         if dist > inner_radius {
-    //             // Wypchnij cząstkę do środka
-    //             let nx = dx / dist;
-    //             let ny = dy / dist;
-    //             x = cx + nx * inner_radius;
-    //             y = cy + ny * inner_radius;
-    //             // Zatrzymaj prędkość (możesz też tylko stłumić, ale zerowanie działa stabilniej)
-    //             self.particles[i].vx = 0.0;
-    //             self.particles[i].vy = 0.0;
-    //         }
-
-    //         // Aktualizacja pozycji
-    //         self.particles[i].x = x;
-    //         self.particles[i].y = y;
-    //     }
-    // }
 
     //oryginalna, przepisana z js
     // pub fn handle_particle_collisions(&mut self, obstacle_x: f32, obstacle_y: f32, obstacle_radius: f32, obstacle_vel_x: f32, obstacle_vel_y: f32) {

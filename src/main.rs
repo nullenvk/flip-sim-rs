@@ -18,20 +18,20 @@ const MAX_GRAVITY: f32 = 200.0;
 
 fn main() {
     let config = config::Config {
-        width: 80,
-        height: 80,
+        width: 100,
+        height: 100,
         spacing: 1.0,
         density: 100.0,
         particle_radius: 0.25,
-        max_particles: 8000,
+        max_particles: 12000,
     };
 
     let runtime_config = config::RuntimeConfig {
         dt: 1.0 / 60.0,
         gravity: (0.0, -100.0),
-        flip_ratio: 0.8,
+        flip_ratio: 0.9,
         num_pressure_iters: 100,
-        num_particle_iters: 2,
+        num_particle_iters: 3,
         over_relaxation: 1.9,
         compensate_drift: true,
         separate_particles: true,
@@ -48,12 +48,10 @@ fn main() {
 
     let mut sim = Simulation::new(&config);
 
-    // ---------- NOWY KSZTAŁT: KOŁO ----------
-    let cx = sim.f_num_x as f32 * sim.h * 0.5; // środek domeny X
-    let cy = sim.f_num_y as f32 * sim.h * 0.5; // środek domeny Y
-    let radius = (sim.f_num_x.min(sim.f_num_y) as f32 * sim.h) * 0.45; // 45% krótszego boku
+    let cx = sim.f_num_x as f32 * sim.h * 0.5;
+    let cy = sim.f_num_y as f32 * sim.h * 0.5;
+    let radius = (sim.f_num_x.min(sim.f_num_y) as f32 * sim.h) * 0.45;
 
-    // Ustaw komórki: wewnątrz koła -> s=1.0, na zewnątrz -> s=0.0 (Solid)
     for x in 0..sim.f_num_x {
         for y in 0..sim.f_num_y {
             let cell_center_x = (x as f32 + 0.5) * sim.h;
