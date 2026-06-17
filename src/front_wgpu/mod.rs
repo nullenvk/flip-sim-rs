@@ -94,6 +94,10 @@ pub struct FrontWgpu {
 
     pub sim: Simulation,
     pub runtime_config: RuntimeConfig,
+
+    pub egui_ctx: egui::Context,
+    pub egui_state: egui_winit::State,
+    pub egui_renderer: egui_wgpu::Renderer,
 }
 
 impl FrontWgpu {
@@ -110,6 +114,22 @@ impl FrontWgpu {
         let render_pipeline = Self::create_render_pipeline(&ctx.device, &ctx.surf_config, &bind_group_layout);
         let grid_instances = Self::init_grid_instances(&sim);
 
+        // EGUI
+        let egui_ctx = egui::Context::default();
+        let egui_state = egui_winit::State::new(
+            egui_ctx.clone(),
+            egui::ViewportId::ROOT,
+            &window,
+            Some(window.scale_factor() as f32),
+            None,
+            None
+        );
+        let egui_renderer = egui_wgpu::Renderer::new(
+            &ctx.device,
+            ctx.surf_config.format,
+            egui_wgpu::RendererOptions::default(),
+        );
+
         Self {
             _window: window,
             ctx,
@@ -121,6 +141,10 @@ impl FrontWgpu {
             grid_instances,
             sim,
             runtime_config,
+
+            egui_ctx,
+            egui_state,
+            egui_renderer
         }
     }
 
@@ -330,6 +354,122 @@ impl FrontWgpu {
         );
     }
 
+    fn prepare_egui(&mut self, encoder: &mut wgpu::CommandEncoder) -> (Vec<egui::ClippedPrimitive>, egui::TexturesDelta) {
+        let raw_input = self.egui_state.take_egui_input(&self._window);
+        self.egui_ctx.begin_pass(raw_input);
+
+        self.draw_ui();
+
+        let full_output = self.egui_ctx.end_pass();
+        let paint_jobs = self.egui_ctx.tessellate(full_output.shapes, self.egui_ctx.pixels_per_point());
+
+        for (id, image_delta) in &full_output.textures_delta.set {
+            self.egui_renderer.update_texture(&self.ctx.device, &self.ctx.queue, *id, image_delta);
+        }
+
+        self.egui_renderer.update_buffers(
+            &self.ctx.device,
+            &self.ctx.queue,
+            encoder,
+            &paint_jobs,
+            &egui_wgpu::ScreenDescriptor {
+                size_in_pixels: [self.ctx.surf_config.width, self.ctx.surf_config.height],
+                pixels_per_point: self.egui_ctx.pixels_per_point(),
+            },
+        );
+
+        (paint_jobs, full_output.textures_delta)
+    }
+
+    fn render_simulation(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Sim Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+
+        render_pass.set_pipeline(&self.render_pipeline);
+
+        if self.runtime_config.draw_grid {
+            render_pass.set_bind_group(0, &self.grid_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.grid_buffer.slice(..));
+            render_pass.draw(0..4, 0..self.sim.f_num_cells as u32);
+        }
+
+        if self.runtime_config.draw_particles {
+            render_pass.set_bind_group(0, &self.particle_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.particle_buffer.slice(..));
+            render_pass.draw(0..4, 0..self.sim.num_particles as u32);
+        }
+    }
+
+    fn render_egui_overlay(&self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, paint_jobs: &[egui::ClippedPrimitive]) {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("EGUI Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        }).forget_lifetime();
+
+        self.egui_renderer.render(
+            &mut render_pass,
+            paint_jobs,
+            &egui_wgpu::ScreenDescriptor {
+                size_in_pixels: [self.ctx.surf_config.width, self.ctx.surf_config.height],
+                pixels_per_point: self.egui_ctx.pixels_per_point(),
+            },
+        );
+    }
+
+    pub fn handle_window_event(&mut self, window: &winit::window::Window, event: &winit::event::WindowEvent) -> bool {
+        self.egui_state.on_window_event(window, event).consumed
+    }
+
+    fn draw_ui(&mut self) {
+        egui::Window::new("Simulation Controls").show(&self.egui_ctx, |ui| {
+            ui.heading("Time & Forces");
+            ui.add(egui::Slider::new(&mut self.runtime_config.dt, 0.001..=0.05).text("Delta Time"));
+            
+            ui.horizontal(|ui| {
+                ui.label("Gravity:");
+                ui.add(egui::DragValue::new(&mut self.runtime_config.gravity.0).speed(1.0));
+                ui.add(egui::DragValue::new(&mut self.runtime_config.gravity.1).speed(1.0));
+            });
+
+            ui.separator();
+            ui.heading("Solver");
+            ui.add(egui::Slider::new(&mut self.runtime_config.num_pressure_iters, 1..=200).text("Pressure Iters"));
+            ui.add(egui::Slider::new(&mut self.runtime_config.num_particle_iters, 1..=10).text("Particle Iters"));
+            ui.add(egui::Slider::new(&mut self.runtime_config.over_relaxation, 1.0..=2.0).text("Over-relaxation"));
+            
+            ui.separator();
+            ui.heading("Rendering");
+            ui.checkbox(&mut self.runtime_config.draw_grid, "Draw Grid");
+            ui.checkbox(&mut self.runtime_config.draw_particles, "Draw Particles");
+        });
+    }
+
     pub fn render(&mut self) {
         self.update_buffers();
 
@@ -339,50 +479,20 @@ impl FrontWgpu {
             _ => return,
         };
 
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = self
-            .ctx.device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Render Encoder"),
-            });
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = self.ctx.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Render Encoder"),
+        });
 
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-
-            render_pass.set_pipeline(&self.render_pipeline);
-
-            if self.runtime_config.draw_grid {
-                render_pass.set_bind_group(0, &self.grid_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, self.grid_buffer.slice(..));
-                render_pass.draw(0..4, 0..self.sim.f_num_cells as u32);
-            }
-
-            if self.runtime_config.draw_particles {
-                render_pass.set_bind_group(0, &self.particle_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, self.particle_buffer.slice(..));
-                render_pass.draw(0..4, 0..self.sim.num_particles as u32);
-            }
-        }
-
+        let (paint_jobs, textures_delta) = self.prepare_egui(&mut encoder);
+        self.render_simulation(&mut encoder, &view);
+        self.render_egui_overlay(&mut encoder, &view, &paint_jobs);
         self.ctx.queue.submit(std::iter::once(encoder.finish()));
         output.present();
+
+        for x in &textures_delta.free {
+            self.egui_renderer.free_texture(x);
+        }
     }
 
     pub fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {

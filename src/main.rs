@@ -41,8 +41,8 @@ fn main() {
         obstacle_vel_x: 0.0,
         obstacle_vel_y: 0.0,
 
-        draw_grid: true,
-        draw_particles: false,
+        draw_grid: false,
+        draw_particles: true,
         mono_mode: false,
     };
 
@@ -178,6 +178,9 @@ impl ApplicationHandler for App {
             return;
         };
 
+        let window = self.window.as_ref().unwrap();
+        let egui_consumed = front.handle_window_event(window, &event);
+
         match event {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
@@ -190,23 +193,26 @@ impl ApplicationHandler for App {
                         ..
                     },
                 ..
-            } => match key {
-                KeyCode::Escape => event_loop.exit(),
-                _ => {}
+            } => {
+                if !egui_consumed && key == KeyCode::Escape {
+                    event_loop.exit();
+                }
             },
             WindowEvent::CursorMoved {
                 device_id: _,
                 position,
             } => {
-                front.runtime_config.gravity = (
-                    ((position.x as f32 - (self.window_size.width as f32 / 2.0))
-                        / (self.window_size.width as f32 / 2.0))
-                        * MAX_GRAVITY,
-                    -((position.y as f32 - (self.window_size.width as f32 / 2.0))
-                        / (self.window_size.width as f32 / 2.0))
-                        * MAX_GRAVITY,
-                );
-                println!("Gravity: {:?}", front.runtime_config.gravity);
+                if !egui_consumed {
+                    front.runtime_config.gravity = (
+                        ((position.x as f32 - (self.window_size.width as f32 / 2.0))
+                            / (self.window_size.width as f32 / 2.0))
+                            * MAX_GRAVITY,
+                        -((position.y as f32 - (self.window_size.height as f32 / 2.0))
+                            / (self.window_size.height as f32 / 2.0))
+                            * MAX_GRAVITY,
+                    );
+                    println!("Gravity: {:?}", front.runtime_config.gravity);
+                }
             }
 
             WindowEvent::Resized(new_size) => {
@@ -226,7 +232,7 @@ impl ApplicationHandler for App {
                 }
 
                 front.render();
-                self.window.as_ref().unwrap().request_redraw();
+                window.request_redraw();
             }
 
             _ => {}
