@@ -13,116 +13,11 @@ use embassy_time::Timer;
 use simulation::*;
 use config::*;
 use embassy_executor::Spawner;
-use embassy_stm32::{Config, i2c::{self, Master}, mode::Blocking, rcc::{Pll, PllRDiv::DIV2, PllSource}, time::Hertz};
+use embassy_stm32::{Config, Peri, adc::AdcChannel, gpio::{AnyPin, Flex, Output, Pin}, i2c::{self, Master}, mode::Blocking, rcc::{Pll, PllRDiv::DIV2, PllSource}, time::Hertz};
 use {defmt_rtt as _, panic_probe as _};
 use embassy_stm32::i2c::I2c;
 use num_traits::Float;
 use defmt::info;
-
-const SET_COL_ADDR: u8 =  0x15;
-const SET_SCROLL_DEACTIVATE: u8 =  0x2E;
-const SET_ROW_ADDR: u8 =  0x75;
-const SET_CONTRAST: u8 =  0x81;
-const SET_SEG_REMAP: u8 =  0xA0;
-const SET_DISP_START_LINE: u8 =  0xA1;
-const SET_DISP_OFFSET: u8 =  0xA2;
-const SET_DISP_MODE: u8 =  0xA4;
-const SET_MUX_RATIO: u8 =  0xA8;
-const SET_FN_SELECT_A: u8 =  0xAB;
-const SET_DISP: u8 =  0xAE;
-const SET_PHASE_LEN: u8 =  0xB1;
-const SET_DISP_CLK_DIV: u8 =  0xB3;
-const SET_SECOND_PRECHARGE: u8 =  0xB6;
-const SET_GRAYSCALE_TABLE: u8 =  0xB8;
-const SET_GRAYSCALE_LINEAR: u8 =  0xB9;
-const SET_PRECHARGE: u8 =  0xBC;
-const SET_VCOM_DESEL: u8 =  0xBE;
-const SET_FN_SELECT_B: u8 =  0xD5;
-const SET_COMMAND_LOCK: u8 =  0xFD;
-
-const OLED: u8 = 0x78u8 >> 1;
-type I2cRef<'a, 'b> = &'a mut I2c<'b, Blocking, Master>;
-
-const CO_CMD: u8 =    0b0000_0000;
-const CO_DATA: u8 =   0b0100_0000;
-const CO_CONT: u8 =   0b0000_0000;
-const CO_SINGLE: u8 = 0b1000_0000;
-
-fn send_init(i2c: I2cRef) {
-    i2c.blocking_write(OLED, &[
-        CO_CMD | CO_CONT,
-
-        SET_COMMAND_LOCK, 0x12, // Unlock
-        SET_DISP, // Display off
-        SET_DISP_START_LINE, 0, //0x20,
-        SET_DISP_OFFSET, 0, // Set vertical offset by COM from 0~127
-        SET_SEG_REMAP, 0b01010001,
-        SET_MUX_RATIO, 127,
-        SET_FN_SELECT_A, 0x00, // Enable internal VDD regulator
-        SET_PHASE_LEN, 0x51, // Phase 1: 1 DCLK, Phase 2: 5 DCLKs
-        SET_DISP_CLK_DIV, 0x01, // Divide ratio: 1, Oscillator Frequency: 0
-        SET_PRECHARGE, 0x08, // Set pre-charge voltage level: VCOMH
-        SET_VCOM_DESEL, 0x07, // Set VCOMH COM deselect voltage level: 0.86*Vcc
-        SET_SECOND_PRECHARGE, 0x01, // Second Pre-charge period: 1 DCLK
-        SET_FN_SELECT_B, 0x62, // Enable enternal VSL, Enable second precharge
-        // Display
-        SET_GRAYSCALE_LINEAR, // Use linear greyscale lookup table
-        SET_CONTRAST, 0x7f, // Medium brightness
-        SET_DISP_MODE, // Normal, inverted
-        SET_SCROLL_DEACTIVATE,
-        SET_DISP | 1,
-    ]).unwrap();
-}
-
-fn set_ranges(i2c: I2cRef, start_x: u8, start_y: u8, end_x: u8, end_y: u8) {
-    i2c.blocking_write(OLED, &[
-        CO_CMD | CO_CONT,
-        SET_COL_ADDR, start_x / 2, end_x / 2 - 1,
-        SET_ROW_ADDR, start_y, end_y - 1,
-    ]).unwrap();
-}
-
-fn clear_screen(i2c: I2cRef) {
-    let mut data_packet = [0u8; 17];
-    data_packet[0] = CO_DATA | CO_CONT;
-    set_ranges(i2c, 0, 0, 128, 128);
-    for _ in 0..128 {
-        for _ in 0..((96 / 16) / 2) {
-            i2c.blocking_write(OLED, &data_packet).unwrap();
-        }
-    }
-}
-
-fn send_data_to_screen(data: &[u8], i2c: I2cRef) {
-    let mut buffer = [0u8; 17];
-    buffer[0] = CO_DATA | CO_CONT;
-    let ld = data.len();
-    for x in (0..ld).step_by(16) {
-        buffer[1..].fill(0);
-        buffer[1..].copy_from_slice(&data[x..(x + 16).min(ld)]);
-        i2c.blocking_write(OLED, &buffer).unwrap();
-    }
-}
-
-fn send_sim_data_to_screen(sim: &Simulation, i2c: I2cRef) {
-    set_ranges(i2c, 0, 0,96,96);
-    let mut row_buffer = [0u8; 1 + 48];
-    // assert_eq!(sim.f_num_x, 16);
-    row_buffer[0] = CO_DATA | CO_CONT;
-
-    for row in 0..sim.f_num_y {
-        for _ in 0..6 {
-            for col_root in 0..16 {
-                let col = sim.get_cell(col_root, row).color;
-                let byte = (col << 4) | col;
-                row_buffer[(1 + col_root * 3) as usize] = byte;
-                row_buffer[(1 + col_root * 3 + 1) as usize] = byte;
-                row_buffer[(1 + col_root * 3 + 2) as usize] = byte;
-            }
-            i2c.blocking_write(OLED, &row_buffer).unwrap();
-        }
-    }
-}
 
 #[embassy_executor::main]
 async fn main(_spawner: Spawner) {
@@ -133,15 +28,8 @@ async fn main(_spawner: Spawner) {
     syscfg.rcc.sys = embassy_stm32::rcc::Sysclk::PLL1_R;
 
     let p = embassy_stm32::init(syscfg);
-    let mut conf = i2c::Config::default();
-    conf.frequency = Hertz::khz(1600);
-    let mut i2c = I2c::new_blocking(p.I2C1, p.PB6, p.PB7, conf);
-    send_init(&mut i2c);
-    clear_screen(&mut i2c);
 
-    let screendata = include_bytes!("raw");
-    set_ranges(&mut i2c, 0, 0, 96, 96);
-    send_data_to_screen(screendata, &mut i2c);
+
 
     let sim_config = CONFIG.clone();
     let mut runtime_config = INITIAL_RUNTIME_CONFIG.clone();
@@ -203,12 +91,39 @@ async fn main(_spawner: Spawner) {
         }
     }
     sim.num_particles = p_idx;
-    clear_screen(&mut i2c);
+    
+    let mut pins:[Flex;9] = [Flex::new(p.PA0),Flex::new(p.PA1),Flex::new(p.PA3),Flex::new(p.PA4),Flex::new(p.PA5),Flex::new(p.PA6),Flex::new(p.PA7),Flex::new(p.PA8),Flex::new(p.PA11)];
+    let lut: [[(u8, u8);8];9] = [[(8, 7), (6, 8), (5, 6), (4, 5), (3, 4), (2, 3), (1, 2), (0, 1)], [(7, 8), (5, 7), (6, 5), (3, 6), (4, 3), (1, 4), (2, 1), (0, 2)], [(5, 8), (7, 5), (3, 7), (6, 3), (1, 6), (4, 1), (0, 4), (2, 0)], [(8, 5), (3, 8), (7, 3), (1, 7), (6, 1), (0, 6), (4, 0), (2, 4)], [(3, 5), (8, 3), (1, 8), (7, 1), (0, 7), (6, 0), (2, 6), (4, 2)], [(5, 3), (1, 5), (8, 1), (0, 8), (7, 0), (2, 7), (6, 2), (4, 6)], [(1, 3), (5, 1), (0, 5), (8, 0), (2, 8), (7, 2), (4, 7), (6, 4)], [(3, 1), (0, 3), (5, 0), (2, 5), (8, 2), (4, 8), (7, 4), (6, 7)], [(1, 0), (3, 0), (3, 2), (5, 2), (5, 4), (8, 4), (8, 6), (7, 6)]];
+    
     loop{
-        send_sim_data_to_screen(&sim, &mut i2c);
-        sim.simulate(&runtime_config);
-        // TODO: Timer::after_micros(100).await;
-
-        
+        for r in 0..lut.len(){
+            for c in 0..lut[0].len(){
+                let (i,j) = lut[r][c];
+                let i = i as usize;
+                let j = j as usize;
+                pins[i].set_as_output(embassy_stm32::gpio::Speed::High);
+                pins[j].set_as_output(embassy_stm32::gpio::Speed::High);
+                pins[i].set_high();
+                pins[j].set_low();
+                Timer::after_micros(500000).await;
+                pins[j].set_as_analog();
+                pins[i].set_as_analog();
+            }
+        }
+        // for i in 0..pins.len(){
+        //     for j in 0..pins.len(){
+        //         if i != j{
+        //             pins[i].set_as_output(embassy_stm32::gpio::Speed::High);
+        //             pins[j].set_as_output(embassy_stm32::gpio::Speed::High);
+        //             pins[i].set_high();
+        //             pins[j].set_low();
+        //             Timer::after_micros(500000).await;
+        //             pins[j].set_as_analog();
+        //             pins[i].set_as_analog();
+        //         }
+        //     }
+        // }   
+        // Timer::after_micros(5000000*10).await;
+        // sim.simulate(&runtime_config);
     }
 }
