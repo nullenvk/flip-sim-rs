@@ -10,6 +10,7 @@ pub mod simulation;
 pub mod config;
 
 use embassy_time::Timer;
+use embedded_hal_1::spi::SpiDevice;
 use simulation::*;
 use config::*;
 use embassy_executor::Spawner;
@@ -19,8 +20,79 @@ use embassy_stm32::i2c::I2c;
 use num_traits::Float;
 use defmt::info;
 
+    static LUT: [[(u8, u8);8];9] = [[(8, 7), (6, 8), (5, 6), (4, 5), (3, 4), (2, 3), (1, 2), (0, 1)], [(7, 8), (5, 7), (6, 5), (3, 6), (4, 3), (1, 4), (2, 1), (0, 2)], [(5, 8), (7, 5), (3, 7), (6, 3), (1, 6), (4, 1), (0, 4), (2, 0)], [(8, 5), (3, 8), (7, 3), (1, 7), (6, 1), (0, 6), (4, 0), (2, 4)], [(3, 5), (8, 3), (1, 8), (7, 1), (0, 7), (6, 0), (2, 6), (4, 2)], [(5, 3), (1, 5), (8, 1), (0, 8), (7, 0), (2, 7), (6, 2), (4, 6)], [(1, 3), (5, 1), (0, 5), (8, 0), (2, 8), (7, 2), (4, 7), (6, 4)], [(3, 1), (0, 3), (5, 0), (2, 5), (8, 2), (4, 8), (7, 4), (6, 7)], [(1, 0), (3, 0), (3, 2), (5, 2), (5, 4), (8, 4), (8, 6), (7, 6)]];
+    
+
+// KOD Z CHATA WYKURWIC
+// KOD Z CHATA DO TESTÓW, WYJEBAĆ POZNIEJ W PRZYSŁOWIOWE PIZDU
+
+    // ADXL362 Command Instructions
+    const CMD_WRITE_REG: u8 = 0x0A;
+    const CMD_READ_REG: u8 = 0x0B;
+
+    // ADXL362 Register Ma
+    const REG_DEVID_AD: u8 = 0x00; // Expected value: 0xAD
+    const REG_PARTID: u8 = 0x02;   // Expected value: 0xF2
+    const REG_XDATA_L: u8 = 0x0E;   // Start of X/Y/Z data registers (0x0E - 0x13)
+    const REG_POWER_CTL: u8 = 0x2D;
+
+    pub struct Adxl362<SPI> {
+    spi: SPI,
+}
+
+    impl<SPI, E> Adxl362<SPI>
+    where
+        SPI: SpiDevice<Error = E>,
+    {
+        pub fn new(spi: SPI) -> Self {
+            Self { spi }
+        }
+
+        /// Reads a single 8-bit register
+        pub async fn read_register(&mut self, reg: u8) -> Result<u8, E> {
+            let mut buf = [CMD_READ_REG, reg, 0x00];
+            self.spi.transfer_in_place(&mut buf);
+            Ok(buf[2])
+        }
+
+        /// Writes a single 8-bit register
+        pub async fn write_register(&mut self, reg: u8, val: u8) -> Result<(), E> {
+            let buf = [CMD_WRITE_REG, reg, val];
+            self.spi.write(&buf)
+        }
+
+        /// Verifies hardware ID and enables measurement mode
+        pub async fn init(&mut self) -> Result<(), E> {
+            let dev_id = self.read_register(REG_DEVID_AD).await?;
+            let part_id = self.read_register(REG_PARTID).await?;
+
+            info!("ADXL362 Device ID: {:#x}, Part ID: {:#x}", dev_id, part_id);
+
+            // Put sensor into Measurement Mode (0x02 in POWER_CTL)
+            self.write_register(REG_POWER_CTL, 0x02).await?;
+            Ok(())
+        }
+
+        /// Reads X, Y, and Z acceleration registers simultaneously
+        pub async fn read_accel(&mut self) -> Result<(i16, i16, i16), E> {
+            // Buffer: [CMD, REG_START, X_L, X_H, Y_L, Y_H, Z_L, Z_H]
+            let mut rx_buf = [0u8; 8];
+            rx_buf[0] = CMD_READ_REG;
+            rx_buf[1] = REG_XDATA_L;
+
+            self.spi.transfer_in_place(&mut rx_buf);
+
+            let x = i16::from_le_bytes([rx_buf[2], rx_buf[3]]);
+            let y = i16::from_le_bytes([rx_buf[4], rx_buf[5]]);
+            let z = i16::from_le_bytes([rx_buf[6], rx_buf[7]]);
+
+            Ok((x, y, z))
+        }
+    }
+
+
 #[embassy_executor::main]
-async fn main(_spawner: Spawner) {
+async fn main(spawner: Spawner) {
 
     let mut syscfg = Config::default();
     syscfg.rcc.hsi = true;
@@ -28,8 +100,6 @@ async fn main(_spawner: Spawner) {
     syscfg.rcc.sys = embassy_stm32::rcc::Sysclk::PLL1_R;
 
     let p = embassy_stm32::init(syscfg);
-
-
 
     let sim_config = CONFIG.clone();
     let mut runtime_config = INITIAL_RUNTIME_CONFIG.clone();
@@ -91,27 +161,60 @@ async fn main(_spawner: Spawner) {
         }
     }
     sim.num_particles = p_idx;
+
+    let cs = embassy_stm32::gpio::Output::new(
+        p.PB0, 
+        embassy_stm32::gpio::Level::High,
+        embassy_stm32::gpio::Speed::VeryHigh,
+    );
     
+    let mut config = embassy_stm32::spi::Config::default();
+    config.mode = embassy_stm32::spi::MODE_0;
+    config.frequency = embassy_stm32::time::Hertz(4_000_000);
+
+    let spi_bus = embassy_stm32::spi::Spi::new_blocking(
+        p.SPI3,
+        p.PB3, // SPI3_SCK
+        p.PB5, // SPI3_MOSI
+        p.PB4, // SPI3_MISO
+        config,
+    );
+
+    let spi_dev = embedded_hal_bus::spi::ExclusiveDevice::new_no_delay(spi_bus, cs);
+    let mut accel = Adxl362::new(spi_dev);
+
+    if let Err(e) = accel.init().await {
+        info!("Failed to initialize ADXL362");
+        return;
+    }
+        
     let mut pins:[Flex;9] = [Flex::new(p.PA0),Flex::new(p.PA1),Flex::new(p.PA3),Flex::new(p.PA4),Flex::new(p.PA5),Flex::new(p.PA6),Flex::new(p.PA7),Flex::new(p.PA8),Flex::new(p.PA11)];
-    let lut: [[(u8, u8);8];9] = [[(8, 7), (6, 8), (5, 6), (4, 5), (3, 4), (2, 3), (1, 2), (0, 1)], [(7, 8), (5, 7), (6, 5), (3, 6), (4, 3), (1, 4), (2, 1), (0, 2)], [(5, 8), (7, 5), (3, 7), (6, 3), (1, 6), (4, 1), (0, 4), (2, 0)], [(8, 5), (3, 8), (7, 3), (1, 7), (6, 1), (0, 6), (4, 0), (2, 4)], [(3, 5), (8, 3), (1, 8), (7, 1), (0, 7), (6, 0), (2, 6), (4, 2)], [(5, 3), (1, 5), (8, 1), (0, 8), (7, 0), (2, 7), (6, 2), (4, 6)], [(1, 3), (5, 1), (0, 5), (8, 0), (2, 8), (7, 2), (4, 7), (6, 4)], [(3, 1), (0, 3), (5, 0), (2, 5), (8, 2), (4, 8), (7, 4), (6, 7)], [(1, 0), (3, 0), (3, 2), (5, 2), (5, 4), (8, 4), (8, 6), (7, 6)]];
-    
+
     loop{
+
+        match accel.read_accel().await {
+            Ok((x, y, z)) => (runtime_config.gravity = ((y/25) as f32,(x/25) as f32)),
+            Err(_) => info!("Failed to read acceleration data"),
+        }
+
         sim.simulate(&runtime_config);
-        for r in 0..lut.len(){
-            for c in 0..lut[0].len(){
+
+        for r in 0..LUT.len(){
+            for c in 0..LUT[0].len(){
                 if sim.get_cell(c+1, r+1).color != 7{continue};
-                let (i,j) = lut[r][c];
+                let (i,j) = LUT[r][c];
                 let i = i as usize;
                 let j = j as usize;
                 pins[i].set_as_output(embassy_stm32::gpio::Speed::High);
                 pins[j].set_as_output(embassy_stm32::gpio::Speed::High);
                 pins[i].set_high();
                 pins[j].set_low();
-                Timer::after_micros(10).await;
+                Timer::after_micros(30).await;
                 pins[j].set_as_analog();
                 pins[i].set_as_analog();
             }
         }
+        Timer::after_micros(16).await;
         // for i in 0..pins.len(){
         //     for j in 0..pins.len(){
         //         if i != j{
