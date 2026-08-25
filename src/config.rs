@@ -1,17 +1,17 @@
 use crate::simulation::config::*;
 
 pub const CONFIG: Config = Config {
-        width: 16,
-        height: 16,
+        width: 9,
+        height: 10,
         spacing: 1.0,
-        density: 1000.0,
+        density: 100.0,
         particle_radius: 0.25,
-        max_particles: 250,
+        max_particles: 100,
     };
 
 pub const INITIAL_RUNTIME_CONFIG: RuntimeConfig = RuntimeConfig {
-        dt: 1.0 / 60.0,
-        gravity: (0.0, 100.0),
+        dt: 1.0 / 45.0,
+        gravity: (10.0, 10.0),
         flip_ratio: 0.8,
         num_pressure_iters: 10,
         num_particle_iters: 2,

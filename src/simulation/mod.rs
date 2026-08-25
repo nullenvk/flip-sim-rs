@@ -318,108 +318,108 @@ impl Simulation {
         }
     }
         // jakies gowno z chata
-    pub fn handle_particle_collisions(&mut self, obstacle_x: f32, obstacle_y: f32, obstacle_radius: f32, obstacle_vel_x: f32, obstacle_vel_y: f32) {
-    let h = self.h;
-    let inv_h = self.f_inv_spacing;
-    let particle_r = self.config.particle_radius;
+//     pub fn handle_particle_collisions(&mut self, obstacle_x: f32, obstacle_y: f32, obstacle_radius: f32, obstacle_vel_x: f32, obstacle_vel_y: f32) {
+//     let h = self.h;
+//     let inv_h = self.f_inv_spacing;
+//     let particle_r = self.config.particle_radius;
 
-    let min_dist_obstacle = obstacle_radius + particle_r;
-    let min_dist2_obstacle = min_dist_obstacle * min_dist_obstacle;
+//     let min_dist_obstacle = obstacle_radius + particle_r;
+//     let min_dist2_obstacle = min_dist_obstacle * min_dist_obstacle;
 
-    for i in 0..self.num_particles {
-        let mut x = self.particles[i].x;
-        let mut y = self.particles[i].y;
+//     for i in 0..self.num_particles {
+//         let mut x = self.particles[i].x;
+//         let mut y = self.particles[i].y;
 
-        // --- przeszkoda (obstacle) ---
-        if obstacle_radius > 0.0 {
-            let dx = x - obstacle_x;
-            let dy = y - obstacle_y;
-            let d2 = dx * dx + dy * dy;
-            if d2 < min_dist2_obstacle {
-                let d = d2.sqrt().max(1e-8);
-                let penetration = min_dist_obstacle - d;
-                let nx = dx / d;
-                let ny = dy / d;
-                x += nx * penetration;
-                y += ny * penetration;
-                let vn = self.particles[i].vx * nx + self.particles[i].vy * ny;
-                if vn < 0.0 {
-                    self.particles[i].vx -= vn * nx;
-                    self.particles[i].vy -= vn * ny;
-                }
-                self.particles[i].vx += obstacle_vel_x;
-                self.particles[i].vy += obstacle_vel_y;
-            }
-        }
+//         // --- przeszkoda (obstacle) ---
+//         if obstacle_radius > 0.0 {
+//             let dx = x - obstacle_x;
+//             let dy = y - obstacle_y;
+//             let d2 = dx * dx + dy * dy;
+//             if d2 < min_dist2_obstacle {
+//                 let d = d2.sqrt().max(1e-8);
+//                 let penetration = min_dist_obstacle - d;
+//                 let nx = dx / d;
+//                 let ny = dy / d;
+//                 x += nx * penetration;
+//                 y += ny * penetration;
+//                 let vn = self.particles[i].vx * nx + self.particles[i].vy * ny;
+//                 if vn < 0.0 {
+//                     self.particles[i].vx -= vn * nx;
+//                     self.particles[i].vy -= vn * ny;
+//                 }
+//                 self.particles[i].vx += obstacle_vel_x;
+//                 self.particles[i].vy += obstacle_vel_y;
+//             }
+//         }
 
-        // --- wypychanie z dowolnego kształtu Solid ---
-        let xi = ((x * inv_h).floor() as i32).clamp(0, self.f_num_x as i32 - 1) as usize;
-        let yi = ((y * inv_h).floor() as i32).clamp(0, self.f_num_y as i32 - 1) as usize;
-        let mut cell_idx = xi * self.f_num_y + yi;
+//         // --- wypychanie z dowolnego kształtu Solid ---
+//         let xi = ((x * inv_h).floor() as i32).clamp(0, self.f_num_x as i32 - 1) as usize;
+//         let yi = ((y * inv_h).floor() as i32).clamp(0, self.f_num_y as i32 - 1) as usize;
+//         let mut cell_idx = xi * self.f_num_y + yi;
 
-        if self.grid[cell_idx].cell_type == CellTypes::Solid {
-            // Szukamy NAJBLIŻSZEJ komórki nie‑Solid, przeszukując CAŁĄ siatkę
-            let mut best_dist2 = f32::MAX;
-            let mut best_nx = 0.0f32;
-            let mut best_ny = 0.0f32;
+//         if self.grid[cell_idx].cell_type == CellTypes::Solid {
+//             // Szukamy NAJBLIŻSZEJ komórki nie‑Solid, przeszukując CAŁĄ siatkę
+//             let mut best_dist2 = f32::MAX;
+//             let mut best_nx = 0.0f32;
+//             let mut best_ny = 0.0f32;
 
-            // Zamiast ograniczonego promienia, przejdź po wszystkich komórkach
-            // To tanie, bo wywołuje się tylko dla cząstek, które już są w ścianie.
-            for ix in 0..self.f_num_x {
-                for iy in 0..self.f_num_y {
-                    let idx = ix * self.f_num_y + iy;
-                    if self.grid[idx].cell_type != CellTypes::Solid {
-                        let cx = (ix as f32 + 0.5) * h;
-                        let cy = (iy as f32 + 0.5) * h;
-                        let dx = cx - x;
-                        let dy = cy - y;
-                        let d2 = dx * dx + dy * dy;
-                        if d2 < best_dist2 {
-                            best_dist2 = d2;
-                            best_nx = dx;
-                            best_ny = dy;
-                        }
-                    }
-                }
-            }
+//             // Zamiast ograniczonego promienia, przejdź po wszystkich komórkach
+//             // To tanie, bo wywołuje się tylko dla cząstek, które już są w ścianie.
+//             for ix in 0..self.f_num_x {
+//                 for iy in 0..self.f_num_y {
+//                     let idx = ix * self.f_num_y + iy;
+//                     if self.grid[idx].cell_type != CellTypes::Solid {
+//                         let cx = (ix as f32 + 0.5) * h;
+//                         let cy = (iy as f32 + 0.5) * h;
+//                         let dx = cx - x;
+//                         let dy = cy - y;
+//                         let d2 = dx * dx + dy * dy;
+//                         if d2 < best_dist2 {
+//                             best_dist2 = d2;
+//                             best_nx = dx;
+//                             best_ny = dy;
+//                         }
+//                     }
+//                 }
+//             }
 
-            if best_dist2 < f32::MAX {
-                let dist = best_nx.hypot(best_ny);
-                let nx = best_nx / dist;
-                let ny = best_ny / dist;
+//             if best_dist2 < f32::MAX {
+//                 let dist = best_nx.hypot(best_ny);
+//                 let nx = best_nx / dist;
+//                 let ny = best_ny / dist;
 
-                // Usuń tylko składową normalną prędkości (jeśli skierowana w ścianę)
-                let vn = self.particles[i].vx * nx + self.particles[i].vy * ny;
-                if vn < 0.0 {
-                    self.particles[i].vx -= vn * nx;
-                    self.particles[i].vy -= vn * ny;
-                }
+//                 // Usuń tylko składową normalną prędkości (jeśli skierowana w ścianę)
+//                 let vn = self.particles[i].vx * nx + self.particles[i].vy * ny;
+//                 if vn < 0.0 {
+//                     self.particles[i].vx -= vn * nx;
+//                     self.particles[i].vy -= vn * ny;
+//                 }
 
-                // Przesuwamy cząstkę wzdłuż normalnej aż WYJDZIE z Solid
-                // Małymi krokami, aby nie przeskoczyć na drugą stronę cienkich ścian
-                let step = h * 0.1;
-                let max_steps = ((dist / step).ceil() as i32).min(1000);
-                for _ in 0..max_steps {
-                    x += nx * step;
-                    y += ny * step;
-                    let xi2 = ((x * inv_h).floor() as i32).clamp(0, self.f_num_x as i32 - 1) as usize;
-                    let yi2 = ((y * inv_h).floor() as i32).clamp(0, self.f_num_y as i32 - 1) as usize;
-                    if self.grid[xi2 * self.f_num_y + yi2].cell_type != CellTypes::Solid {
-                        break; // Jesteśmy w płynie
-                    }
-                }
-            } else {
-                // Brak płynnej komórki w całej siatce – nie powinno się zdarzyć
-                // Zerujemy prędkość i zostawiamy na miejscu
-                self.particles[i].vx = 0.0;
-                self.particles[i].vy = 0.0;
-            }
-        }
+//                 // Przesuwamy cząstkę wzdłuż normalnej aż WYJDZIE z Solid
+//                 // Małymi krokami, aby nie przeskoczyć na drugą stronę cienkich ścian
+//                 let step = h * 0.1;
+//                 let max_steps = ((dist / step).ceil() as i32).min(1000);
+//                 for _ in 0..max_steps {
+//                     x += nx * step;
+//                     y += ny * step;
+//                     let xi2 = ((x * inv_h).floor() as i32).clamp(0, self.f_num_x as i32 - 1) as usize;
+//                     let yi2 = ((y * inv_h).floor() as i32).clamp(0, self.f_num_y as i32 - 1) as usize;
+//                     if self.grid[xi2 * self.f_num_y + yi2].cell_type != CellTypes::Solid {
+//                         break; // Jesteśmy w płynie
+//                     }
+//                 }
+//             } else {
+//                 // Brak płynnej komórki w całej siatce – nie powinno się zdarzyć
+//                 // Zerujemy prędkość i zostawiamy na miejscu
+//                 self.particles[i].vx = 0.0;
+//                 self.particles[i].vy = 0.0;
+//             }
+//         }
 
-        self.particles[i].x = x;
-        self.particles[i].y = y;
-    }
-}
+//         self.particles[i].x = x;
+//         self.particles[i].y = y;
+//     }
+// }
 
     //z chata do kola
     // pub fn handle_particle_collisions(&mut self, obstacle_x: f32, obstacle_y: f32, obstacle_radius: f32, obstacle_vel_x: f32, obstacle_vel_y: f32) {
@@ -474,57 +474,57 @@ impl Simulation {
     // }
 
     //oryginalna, przepisana z js
-    // pub fn handle_particle_collisions(&mut self, obstacle_x: f32, obstacle_y: f32, obstacle_radius: f32, obstacle_vel_x: f32, obstacle_vel_y: f32) {
-    //     let h = 1.0 / self.f_inv_spacing;
-    //     let r = self.config.particle_radius;
-    //     let min_dist = obstacle_radius + r;
-    //     let min_dist2 = min_dist * min_dist;
+    pub fn handle_particle_collisions(&mut self, obstacle_x: f32, obstacle_y: f32, obstacle_radius: f32, obstacle_vel_x: f32, obstacle_vel_y: f32) {
+        let h = 1.0 / self.f_inv_spacing;
+        let r = self.config.particle_radius;
+        let min_dist = obstacle_radius + r;
+        let min_dist2 = min_dist * min_dist;
 
-    //     let min_x = h + r;
-    //     let max_x = (self.f_num_x as f32 - 1.0) * h - r;
-    //     let min_y = h + r;
-    //     let max_y = (self.f_num_y as f32 - 1.0) * h - r;
+        let min_x = h + r;
+        let max_x = (self.f_num_x as f32 - 1.0) * h - r;
+        let min_y = h + r;
+        let max_y = (self.f_num_y as f32 - 1.0) * h - r;
 
-    //     for i in 0..self.num_particles {
-    //         let mut x = self.particles[i].x;
-    //         let mut y = self.particles[i].y;
+        for i in 0..self.num_particles {
+            let mut x = self.particles[i].x;
+            let mut y = self.particles[i].y;
 
-    //         let dx = x - obstacle_x;
-    //         let dy = y - obstacle_y;
-    //         let d2 = dx * dx + dy * dy;
+            let dx = x - obstacle_x;
+            let dy = y - obstacle_y;
+            let d2 = dx * dx + dy * dy;
 
-    //         if d2 < min_dist2 {
+            if d2 < min_dist2 {
 
-    //             let d = d2.sqrt().max(1e-8); // unikaj dzielenia przez 0
-    //             let penetration = min_dist - d;
-    //             x += (dx / d) * penetration;
-    //             y += (dy / d) * penetration;
+                let d = d2.sqrt().max(1e-8); // unikaj dzielenia przez 0
+                let penetration = min_dist - d;
+                x += (dx / d) * penetration;
+                y += (dy / d) * penetration;
 
-    //             self.particles[i].vx = obstacle_vel_x;
-    //             self.particles[i].vy = obstacle_vel_y;
-    //         }
+                self.particles[i].vx = obstacle_vel_x;
+                self.particles[i].vy = obstacle_vel_y;
+            }
 
-    //         if x < min_x {
-    //             x = min_x;
-    //             self.particles[i].vx = 0.0;
-    //         }
-    //         if x > max_x {
-    //             x = max_x;
-    //             self.particles[i].vx = 0.0;
-    //         }
-    //         if y < min_y {
-    //             y = min_y;
-    //             self.particles[i].vy = 0.0;
-    //         }
-    //         if y > max_y {
-    //             y = max_y;
-    //             self.particles[i].vy = 0.0;
-    //         }
+            if x < min_x {
+                x = min_x;
+                self.particles[i].vx = 0.0;
+            }
+            if x > max_x {
+                x = max_x;
+                self.particles[i].vx = 0.0;
+            }
+            if y < min_y {
+                y = min_y;
+                self.particles[i].vy = 0.0;
+            }
+            if y > max_y {
+                y = max_y;
+                self.particles[i].vy = 0.0;
+            }
 
-    //         self.particles[i].x = x;
-    //         self.particles[i].y = y;
-    //     }
-    // }
+            self.particles[i].x = x;
+            self.particles[i].y = y;
+        }
+    }
 
     pub fn transfer_velocities(&mut self, to_grid: bool, flip_ratio: f32) {
         let n = self.f_num_y;

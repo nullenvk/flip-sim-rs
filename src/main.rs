@@ -40,24 +40,24 @@ async fn main(_spawner: Spawner) {
     let cy = sim.f_num_y as f32 * sim.h * 0.5; // środek domeny Y
     let radius = (sim.f_num_x.min(sim.f_num_y) as f32 * sim.h) * 0.45; // 45% krótszego boku
 
-    // Ustaw komórki: wewnątrz koła -> s=1.0, na zewnątrz -> s=0.0 (Solid)
-    for x in 0..sim.f_num_x {
-        for y in 0..sim.f_num_y {
-            let cell_center_x = (x as f32 + 0.5) * sim.h;
-            let cell_center_y = (y as f32 + 0.5) * sim.h;
-            let dx = cell_center_x - cx;
-            let dy = cell_center_y - cy;
-            let in_circle = dx * dx + dy * dy <= radius * radius;
+    // // Ustaw komórki: wewnątrz koła -> s=1.0, na zewnątrz -> s=0.0 (Solid)
+    // for x in 0..sim.f_num_x {
+    //     for y in 0..sim.f_num_y {
+    //         let cell_center_x = (x as f32 + 0.5) * sim.h;
+    //         let cell_center_y = (y as f32 + 0.5) * sim.h;
+    //         let dx = cell_center_x - cx;
+    //         let dy = cell_center_y - cy;
+    //         let in_circle = dx * dx + dy * dy <= radius * radius;
 
-            let cell_nr = x * sim.f_num_y + y;
-            sim.grid[cell_nr].s = if in_circle { 1.0 } else { 0.0 };
-            sim.grid[cell_nr].cell_type = if in_circle {
-                cell::CellTypes::Gas
-            } else {
-                cell::CellTypes::Solid
-            };
-        }
-    }
+    //         let cell_nr = x * sim.f_num_y + y;
+    //         sim.grid[cell_nr].s = if in_circle { 1.0 } else { 0.0 };
+    //         sim.grid[cell_nr].cell_type = if in_circle {
+    //             cell::CellTypes::Gas
+    //         } else {
+    //             cell::CellTypes::Solid
+    //         };
+    //     }
+    // }
 
     // ---------- NOWE CZĄSTKI W KOLE ----------
     // Wyczyść stare cząstki
@@ -96,8 +96,10 @@ async fn main(_spawner: Spawner) {
     let lut: [[(u8, u8);8];9] = [[(8, 7), (6, 8), (5, 6), (4, 5), (3, 4), (2, 3), (1, 2), (0, 1)], [(7, 8), (5, 7), (6, 5), (3, 6), (4, 3), (1, 4), (2, 1), (0, 2)], [(5, 8), (7, 5), (3, 7), (6, 3), (1, 6), (4, 1), (0, 4), (2, 0)], [(8, 5), (3, 8), (7, 3), (1, 7), (6, 1), (0, 6), (4, 0), (2, 4)], [(3, 5), (8, 3), (1, 8), (7, 1), (0, 7), (6, 0), (2, 6), (4, 2)], [(5, 3), (1, 5), (8, 1), (0, 8), (7, 0), (2, 7), (6, 2), (4, 6)], [(1, 3), (5, 1), (0, 5), (8, 0), (2, 8), (7, 2), (4, 7), (6, 4)], [(3, 1), (0, 3), (5, 0), (2, 5), (8, 2), (4, 8), (7, 4), (6, 7)], [(1, 0), (3, 0), (3, 2), (5, 2), (5, 4), (8, 4), (8, 6), (7, 6)]];
     
     loop{
+        sim.simulate(&runtime_config);
         for r in 0..lut.len(){
             for c in 0..lut[0].len(){
+                if sim.get_cell(c+1, r+1).color != 7{continue};
                 let (i,j) = lut[r][c];
                 let i = i as usize;
                 let j = j as usize;
@@ -105,7 +107,7 @@ async fn main(_spawner: Spawner) {
                 pins[j].set_as_output(embassy_stm32::gpio::Speed::High);
                 pins[i].set_high();
                 pins[j].set_low();
-                Timer::after_micros(500000).await;
+                Timer::after_micros(10).await;
                 pins[j].set_as_analog();
                 pins[i].set_as_analog();
             }
