@@ -19,6 +19,7 @@ use {defmt_rtt as _, panic_probe as _};
 use embassy_stm32::i2c::I2c;
 use num_traits::Float;
 use defmt::info;
+use embassy_time::Instant;
 
     static LUT: [[(u8, u8);8];9] = [[(8, 7), (6, 8), (5, 6), (4, 5), (3, 4), (2, 3), (1, 2), (0, 1)], [(7, 8), (5, 7), (6, 5), (3, 6), (4, 3), (1, 4), (2, 1), (0, 2)], [(5, 8), (7, 5), (3, 7), (6, 3), (1, 6), (4, 1), (0, 4), (2, 0)], [(8, 5), (3, 8), (7, 3), (1, 7), (6, 1), (0, 6), (4, 0), (2, 4)], [(3, 5), (8, 3), (1, 8), (7, 1), (0, 7), (6, 0), (2, 6), (4, 2)], [(5, 3), (1, 5), (8, 1), (0, 8), (7, 0), (2, 7), (6, 2), (4, 6)], [(1, 3), (5, 1), (0, 5), (8, 0), (2, 8), (7, 2), (4, 7), (6, 4)], [(3, 1), (0, 3), (5, 0), (2, 5), (8, 2), (4, 8), (7, 4), (6, 7)], [(1, 0), (3, 0), (3, 2), (5, 2), (5, 4), (8, 4), (8, 6), (7, 6)]];
     
@@ -190,8 +191,19 @@ async fn main(spawner: Spawner) {
         
     let mut pins:[Flex;9] = [Flex::new(p.PA0),Flex::new(p.PA1),Flex::new(p.PA3),Flex::new(p.PA4),Flex::new(p.PA5),Flex::new(p.PA6),Flex::new(p.PA7),Flex::new(p.PA8),Flex::new(p.PA11)];
 
-    loop{
+    // loop {
+    //     let mut total = 0u64;
+    //     for i in 0..10 {
+    //         let start = Instant::now();
+    //         sim.simulate(&runtime_config);
+    //         total += Instant::now().duration_since(start).as_micros();
+    //     }
+        
+    //     let avg = total / 10u64;
+    //     info!("Running 10 frames took {} micros.",avg);
+    // }
 
+    loop{
         match accel.read_accel().await {
             Ok((x, y, z)) => (runtime_config.gravity = ((y/25) as f32,(x/25) as f32)),
             Err(_) => info!("Failed to read acceleration data"),
@@ -215,20 +227,5 @@ async fn main(spawner: Spawner) {
             }
         }
         Timer::after_micros(16).await;
-        // for i in 0..pins.len(){
-        //     for j in 0..pins.len(){
-        //         if i != j{
-        //             pins[i].set_as_output(embassy_stm32::gpio::Speed::High);
-        //             pins[j].set_as_output(embassy_stm32::gpio::Speed::High);
-        //             pins[i].set_high();
-        //             pins[j].set_low();
-        //             Timer::after_micros(500000).await;
-        //             pins[j].set_as_analog();
-        //             pins[i].set_as_analog();
-        //         }
-        //     }
-        // }   
-        // Timer::after_micros(5000000*10).await;
-        // sim.simulate(&runtime_config);
     }
 }
