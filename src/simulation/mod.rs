@@ -268,8 +268,8 @@ impl Simulation {
                     }
                 }
 
-                self.particles[i].x = px;
-                self.particles[i].y = py;
+                // self.particles[i].x = px;
+                // self.particles[i].y = py;
             }
         }
     }
