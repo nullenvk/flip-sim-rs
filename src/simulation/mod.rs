@@ -173,7 +173,7 @@ impl Simulation {
         let min_dist = 2.0 * self.config.particle_radius;
         let min_dist2 = min_dist * min_dist;
 
-        for _ in 0..num_iters {
+        
             self.num_cell_particles.fill(0);
 
             for i in 0..self.num_particles {
@@ -202,14 +202,15 @@ impl Simulation {
                 self.cell_particle_ids[idx as usize] = i as u8;
             }
 
+            for _ in 0..num_iters {
             for i in 0..self.num_particles {
                 let mut px = self.particles[i].x;
                 let mut py = self.particles[i].y;
 
                 let pxi =
-                    ((px * self.p_inv_spacing).floor() as i32).clamp(0, (self.p_num_x - 1) as i32);
+                    ((px * self.p_inv_spacing).floor() as i32);//.clamp(0, (self.p_num_x - 1) as i32);
                 let pyi =
-                    ((py * self.p_inv_spacing).floor() as i32).clamp(0, (self.p_num_y - 1) as i32);
+                    ((py * self.p_inv_spacing).floor() as i32);//.clamp(0, (self.p_num_y - 1) as i32);
 
                 let x0 = (pxi - 1).max(0);
                 let y0 = (pyi - 1).max(0);
@@ -231,33 +232,38 @@ impl Simulation {
                             let px2 = self.particles[id2].x;
                             let py2 = self.particles[id2].y;
 
-                            let dx = px - px2;
-                            let dy = py - py2;
+                            let mut dx = px2 - px;
+                            let mut dy = py2 - py;
                             let d2 = dx * dx + dy * dy;
 
-                            if d2 < min_dist2 && d2 > 1e-8 {
-                                let d = d2.sqrt();
-                                let push = 0.5 * (min_dist - d) / d;
-
+                            if d2 > min_dist2 || d2 < 1e-8 {continue;}
+                            let d = d2.sqrt();
+                            let push = 0.5 * (min_dist - d) / d;
+                            dx *= push;
+							dy *= push;
+                            self.particles[i].x -= dx;
+                            self.particles[i].y -= dy;
+                            self.particles[id2].x += dx;
+                            self.particles[id2].y += dy;
                                 // rozsuń obie cząstki
-                                if i < id2 {
-                                    let (left, right) = self.particles.split_at_mut(id2);
-                                    left[i].x += dx * push;
-                                    left[i].y += dy * push;
-                                    right[0].x -= dx * push;
-                                    right[0].y -= dy * push;
-                                    px += dx * push;
-                                    py += dy * push;
-                                } else {
-                                    let (left, right) = self.particles.split_at_mut(i);
-                                    right[0].x += dx * push;
-                                    right[0].y += dy * push;
-                                    left[id2].x -= dx * push;
-                                    left[id2].y -= dy * push;
-                                    px += dx * push;
-                                    py += dy * push;
-                                }
-                            }
+                                // if i < id2 {
+                                //     let (left, right) = self.particles.split_at_mut(id2);
+                                //     left[i].x += dx * push;
+                                //     left[i].y += dy * push;
+                                //     right[0].x -= dx * push;
+                                //     right[0].y -= dy * push;
+                                //     px += dx * push;
+                                //     py += dy * push;
+                                // } else {
+                                //     let (left, right) = self.particles.split_at_mut(i);
+                                //     right[0].x += dx * push;
+                                //     right[0].y += dy * push;
+                                //     left[id2].x -= dx * push;
+                                //     left[id2].y -= dy * push;
+                                //     px += dx * push;
+                                //     py += dy * push;
+                                // }
+                            
                         }
                     }
                 }
