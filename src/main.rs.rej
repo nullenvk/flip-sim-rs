@@ -1,0 +1,65 @@
+--- src/main.rs
++++ src/main.rs
+@@ -23,14 +27,14 @@ fn main() {
+         spacing: 1.0,
+         density: 1000.0,
+         particle_radius: 0.3,
+-        max_particles: 10000,
++        max_particles: 1000,
+     };
+ 
+     let runtime_config = config::RuntimeConfig {
+-        dt: 1.0 /60.0,
+-        gravity: (0.0, -9.81),
++        dt: 1.0 / 60.0,
++        gravity: (0.0, -100.0),
+         flip_ratio: 0.9,
+-        num_pressure_iters: 100,
++        num_pressure_iters: 500,
+         num_particle_iters: 2,
+         over_relaxation: 1.9,
+         compensate_drift: true,
+@@ -50,15 +54,20 @@ fn main() {
+             // tank boundaries
+          for x in 0..sim.f_num_x {
+             for y in 0..sim.f_num_y {
+-                let mut s = 1.0; 
+-
+-                if x == 0 || x == sim.f_num_x - 1 || y == 0 {   
+-                    s = 0.0;
+-                }
+-                
+                 let cell_nr = x * sim.f_num_y + y;
+-                sim.grid[cell_nr].s = s;
+-                if s == 0.0 {
++                sim.grid[cell_nr].s = 1.0;
++                sim.grid[cell_nr].cell_type = cell::CellTypes::Gas;
++
++                let e = 1.0;
++                let r = 20.0;
++
++                let cx = sim.f_num_x as f32 / 2.0;
++                let cy = sim.f_num_y as f32 / 2.0;
++                let dx = x as f32 - cx;
++                let dy = y as f32 - cy;
++                let dist = (dx * dx + dy * dy).sqrt();
++                if (r - e..r + e).contains(&dist) {
++                    sim.grid[cell_nr].s = 0.0;
+                     sim.grid[cell_nr].cell_type = cell::CellTypes::Solid;
+                 }
+             }
+@@ -139,7 +156,13 @@ impl ApplicationHandler for App {
+                 KeyCode::Escape => event_loop.exit(),
+                 _ => {}
+             },
+- 
++            WindowEvent::CursorMoved { device_id: _, position } => {
++                front.runtime_config.gravity = (
++                    ((position.x as f32 - (self.window_size.width as f32 / 2.0)) / (self.window_size.width as f32 / 2.0)) * MAX_GRAVITY,
++                    -((position.y as f32 - (self.window_size.width as f32 / 2.0)) / (self.window_size.width as f32 / 2.0)) * MAX_GRAVITY,
++                );
++                println!("Gravity: {:?}", front.runtime_config.gravity);
++            }
+             WindowEvent::Resized(new_size) => {
+                 front.resize(new_size);
+             }
