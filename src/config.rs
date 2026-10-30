@@ -4,7 +4,7 @@ pub const CONFIG: Config = Config {
         width: 9,
         height: 10,
         spacing: 1.0, //nie tykać bo sie zjebie
-        density: 5000.0,
+        density: 500.0,
         particle_radius: 0.167,
         max_particles: 250,
     };

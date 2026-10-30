@@ -190,7 +190,7 @@ async fn main(spawner: Spawner) {
 
     loop{
         match accel.read_accel().await {
-            Ok((x, y, z)) => (runtime_config.gravity = ((y/25) as f32,(x/25) as f32)),
+            Ok((x, y, z)) => (runtime_config.gravity = ((y/20) as f32,(x/20) as f32)),
             Err(_) => info!("Failed to read acceleration data"),
         }
 
